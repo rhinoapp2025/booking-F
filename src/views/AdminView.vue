@@ -2528,23 +2528,23 @@ async function shareHotelLink() {
 .slip-preview { margin: 0 0 var(--space-3); }
 .slip-open {
   position: relative;
-  display: block;
-  width: 100%;
+  display: inline-block;
+  max-width: min(100%, 280px);
   padding: 0;
   border: none;
-  background: transparent;
+  background: var(--color-surface-muted);
   cursor: zoom-in;
   border-radius: var(--radius-md);
   overflow: hidden;
 }
 .slip-img {
-  width: 100%;
-  max-width: none;
-  max-height: 220px;
-  object-fit: cover;
-  object-position: top;
-  border-radius: var(--radius-md);
   display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
 }
 .slip-zoom-hint {
   position: absolute;
