@@ -388,10 +388,26 @@ function switchBookingListTab(key) {
 }
 
 function revokeSlipUrls() {
+  closeSlipLightbox()
   for (const url of Object.values(slipUrls.value)) {
     if (url) URL.revokeObjectURL(url)
   }
   slipUrls.value = {}
+}
+
+const slipLightboxUrl = ref('')
+
+function openSlipLightbox(url) {
+  if (!url) return
+  slipLightboxUrl.value = url
+}
+
+function closeSlipLightbox() {
+  slipLightboxUrl.value = ''
+}
+
+function onSlipLightboxKey(e) {
+  if (e.key === 'Escape' && slipLightboxUrl.value) closeSlipLightbox()
 }
 
 async function loadSlipImages(list) {
@@ -1331,6 +1347,7 @@ onMounted(() => {
   loadViewTypeOptions()
   loadRooms({ silent: true })
   startRoomsPoll()
+  window.addEventListener('keydown', onSlipLightboxKey)
 })
 
 function switchTab(t) {
@@ -1357,6 +1374,7 @@ watch(showKioskTab, (on) => {
 
 onUnmounted(() => {
   stopRoomsPoll()
+  window.removeEventListener('keydown', onSlipLightboxKey)
   revokeSlipUrls()
 })
 
@@ -1571,7 +1589,10 @@ async function shareHotelLink() {
           </p>
           <p v-if="b.status === 'cancelled' && b.cancelled_reason" class="pms-note">{{ b.cancelled_reason }}</p>
           <div v-if="slipUrls[b.id]" class="slip-preview">
-            <img :src="slipUrls[b.id]" alt="สลิปโอนเงิน" class="slip-img" />
+            <button type="button" class="slip-open" title="กดเพื่อขยายสลิป" @click="openSlipLightbox(slipUrls[b.id])">
+              <img :src="slipUrls[b.id]" alt="สลิปโอนเงิน" class="slip-img" />
+              <span class="slip-zoom-hint">กดเพื่อขยาย</span>
+            </button>
           </div>
           <BookingPolicyNotes
             :cancellation-policy="b.cancellation_policy"
@@ -2370,6 +2391,22 @@ async function shareHotelLink() {
     </div>
 
     <BottomNav active="admin" />
+
+    <Teleport to="body">
+      <div
+        v-if="slipLightboxUrl"
+        class="slip-lightbox"
+        role="dialog"
+        aria-modal="true"
+        aria-label="สลิปการชำระ"
+        @click.self="closeSlipLightbox"
+      >
+        <button type="button" class="slip-lightbox-close icon-btn" aria-label="ปิด" @click="closeSlipLightbox">
+          <i class="ti ti-x"></i>
+        </button>
+        <img :src="slipLightboxUrl" alt="สลิปการชำระ" class="slip-lightbox-img" @click.stop />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -2489,7 +2526,64 @@ async function shareHotelLink() {
 .room-tag      { font-size: var(--text-label); padding: 2px var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-pill); }
 .booking-price { font-weight: 700; margin-bottom: var(--space-3); }
 .slip-preview { margin: 0 0 var(--space-3); }
-.slip-img { max-width: 100%; max-height: 280px; border-radius: var(--radius-md); display: block; }
+.slip-open {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.slip-img {
+  width: 100%;
+  max-width: none;
+  max-height: 220px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius-md);
+  display: block;
+}
+.slip-zoom-hint {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: var(--text-label);
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+}
+.slip-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-admin-dialog);
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+}
+.slip-lightbox-img {
+  max-width: min(100%, 920px);
+  max-height: 90vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.slip-lightbox-close {
+  position: absolute;
+  top: max(var(--space-3), env(safe-area-inset-top));
+  right: max(var(--space-3), env(safe-area-inset-right));
+  background: rgba(255, 255, 255, 0.14);
+  border-color: transparent;
+  color: #fff;
+}
 .pms-note { font-size: var(--text-label); color: var(--color-text-secondary); margin: calc(var(--space-2) * -1) 0 var(--space-3); }
 .pms-error { color: #721c24; }
 .booking-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

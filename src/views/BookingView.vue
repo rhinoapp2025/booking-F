@@ -360,15 +360,29 @@ function backToPlans() {
   errorMsg.value = ''
 }
 
+function missingRequiredFieldLabel() {
+  if (selectablePlans.value.length > 1 && !selectedPlanId.value) return 'เรทแพลน'
+  if (!guestTitle.value) return 'คำนำหน้า'
+  if (!guestSex.value) return 'เพศ'
+  if (!guestFirstName.value.trim()) return 'ชื่อ'
+  if (!guestLastName.value.trim()) return 'นามสกุล'
+  return ''
+}
+
+async function alertRequiredField(label) {
+  await Swal.fire({
+    title: `กรุณากรอก ${label}`,
+    icon: 'warning',
+    confirmButtonText: 'ตกลง',
+  })
+}
+
 async function confirmBooking() {
   if (!selectedRoomType.value) return
-  if (selectablePlans.value.length > 1 && !selectedPlanId.value) {
-    errorMsg.value = 'กรุณาเลือกเรทแพลน'
-    bookingStep.value = 'plan'
-    return
-  }
-  if (!guestTitle.value || !guestSex.value || !guestFirstName.value.trim() || !guestLastName.value.trim()) {
-    errorMsg.value = 'กรอกคำนำหน้า เพศ ชื่อ และนามสกุล'
+  const missing = missingRequiredFieldLabel()
+  if (missing) {
+    if (missing === 'เรทแพลน') bookingStep.value = 'plan'
+    await alertRequiredField(missing)
     return
   }
   busy.value    = true
