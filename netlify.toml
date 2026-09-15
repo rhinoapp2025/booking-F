@@ -1,0 +1,26 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  VITE_API_BASE_URL = "https://nail-b.onrender.com"
+
+[[headers]]
+  for = "/firebase-messaging-sw.js"
+  [headers.values]
+    Content-Type = "application/javascript; charset=utf-8"
+    Service-Worker-Allowed = "/"
+
+[[headers]]
+  for = "/version.json"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate"
+
+[[edge_functions]]
+  path = "/*"
+  function = "share-preview"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
