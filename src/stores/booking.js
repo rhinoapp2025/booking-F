@@ -10,6 +10,8 @@ export const useBookingStore = defineStore('booking', {
     error:             '',
     depositPercent:    30,
     collectFull:       false,
+    serviceChargePercent: 0,
+    vatPercent:        0,
     advanceDays:       90,
     unpaidExpireHours: 24,
   }),
@@ -132,14 +134,24 @@ export const useBookingStore = defineStore('booking', {
     // ─── โหลด settings ───────────────────────────────────────────────────────
     async fetchHotelSettings(hotelSlug) {
       try {
-        const { data } = await api.get(`/api/hotels/${hotelSlug}/settings`)
-        this.depositPercent    = Number(data.deposit_percent)    || 30
-        this.collectFull       = data.payment_collect_mode === 'full'
-        this.advanceDays       = Number(data.book_advance_days)  || 90
-        this.unpaidExpireHours = Number(data.auto_cancel_hours)  || 24
-        return data
+        const { data } = await api.get(`/api/hotels/${hotelSlug}/payment`)
+        this.depositPercent = Number(data.deposit_percent) || 30
+        this.collectFull = data.payment_collect_mode === 'full'
+        this.serviceChargePercent = Number(data.service_charge_percent) || 0
+        this.vatPercent = Number(data.vat_percent) || 0
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
+      }
+      try {
+        const { data } = await api.get(`/api/hotels/${hotelSlug}/settings`)
+        this.advanceDays = Number(data.book_advance_days) || 90
+        this.unpaidExpireHours = Number(data.auto_cancel_hours) || 24
+        if (data.payment_collect_mode) this.collectFull = data.payment_collect_mode === 'full'
+        if (data.deposit_percent != null) this.depositPercent = Number(data.deposit_percent) || this.depositPercent
+        if (data.service_charge_percent != null) this.serviceChargePercent = Number(data.service_charge_percent) || 0
+        if (data.vat_percent != null) this.vatPercent = Number(data.vat_percent) || 0
+      } catch {
+        // ยังไม่ล็อกอินก็ใช้ค่าจาก /payment ได้
       }
     },
 

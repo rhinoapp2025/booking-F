@@ -94,6 +94,8 @@ const settings = reactive({
   bank_account_no: '',
   deposit_percent: '30',
   payment_collect_mode: 'deposit',
+  service_charge_percent: '0',
+  vat_percent: '0',
   auto_cancel_hours: '24',
   unpaid_auto_cancel_enabled: 'true',
   cancellation_policy: '',
@@ -705,6 +707,18 @@ watch(hotelSlug, () => {
           <div class="form-row">
             <label class="form-label">ยกเลิกอัตโนมัติ (ชม.)</label>
             <input v-model="settings.auto_cancel_hours" class="form-input" type="number" min="1" max="168" />
+          </div>
+        </div>
+        <div v-if="collectFull" class="form-grid">
+          <div class="form-row">
+            <label class="form-label">Service Charge (%)</label>
+            <input v-model="settings.service_charge_percent" class="form-input" type="number" min="0" max="100" step="0.01" />
+            <span class="form-hint">คิดจากยอดห้อง + อาหารเช้า ในหน้าจองเมื่อเก็บเต็มจำนวน</span>
+          </div>
+          <div class="form-row">
+            <label class="form-label">VAT (%)</label>
+            <input v-model="settings.vat_percent" class="form-input" type="number" min="0" max="100" step="0.01" />
+            <span class="form-hint">คิดจากยอดรวมค่าบริการ (ห้อง + อาหารเช้า + Service Charge)</span>
           </div>
         </div>
         <label class="toggle-label">

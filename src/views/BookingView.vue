@@ -14,6 +14,7 @@ import BottomNav from '../components/BottomNav.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import BookingPolicyNotes from '../components/BookingPolicyNotes.vue'
 import ReviewFormModal from '../components/ReviewFormModal.vue'
+import { applyStayCharges } from '../utils/stayCharges'
 import {
   GUEST_NATIONS,
   GUEST_TITLES,
@@ -236,7 +237,13 @@ const breakfastStayTotal = computed(() => {
   if (!wantBreakfast.value) return 0
   return abfPerPerson.value * Number(breakfastCount.value) * nights.value
 })
-const stayTotal = computed(() => roomStayTotal.value + breakfastStayTotal.value)
+const staySubtotal = computed(() => roomStayTotal.value + breakfastStayTotal.value)
+const stayCharges = computed(() => applyStayCharges(staySubtotal.value, {
+  collectFull: bookingStore.collectFull,
+  serviceChargePercent: bookingStore.serviceChargePercent,
+  vatPercent: bookingStore.vatPercent,
+}))
+const stayTotal = computed(() => stayCharges.value.total)
 const modalTitle = computed(() => (bookingStep.value === 'plan' ? 'เลือกเรทแพลน' : 'ยืนยันการจอง'))
 
 function setBreakfastCount(n) {
@@ -930,6 +937,14 @@ onUnmounted(() => {
                 <span class="summary-value">฿{{ breakfastStayTotal.toLocaleString() }}</span>
               </div>
               </template>
+            </div>
+            <div v-if="stayCharges.service_charge" class="summary-row">
+              <span class="summary-label">Service Charge {{ stayCharges.service_charge_percent }}%</span>
+              <span class="summary-value">฿{{ stayCharges.service_charge.toLocaleString() }}</span>
+            </div>
+            <div v-if="stayCharges.vat" class="summary-row">
+              <span class="summary-label">VAT {{ stayCharges.vat_percent }}%</span>
+              <span class="summary-value">฿{{ stayCharges.vat.toLocaleString() }}</span>
             </div>
             <div class="summary-row summary-total">
               <span class="summary-label">ราคารวม</span>
