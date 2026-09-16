@@ -11,6 +11,7 @@ import ChannelManagerPanel from './ChannelManagerPanel.vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
 import { apiMediaUrl } from '../utils/resolveUiImageUrl'
+import { compressImage } from '../utils/compressChatImage'
 
 const { hotelSlug, hotelPath } = useHotelRoute()
 const hotelStore = useHotelStore()
@@ -71,6 +72,8 @@ const newType = reactive({
 })
 const typeImageUploading = ref(false)
 const pendingTypeImages = ref([])
+const roomTypeFileRef = ref(null)
+const localTypeFileRef = ref(null)
 const localTypePreviews = computed(() => {
   if (editingTypeId.value) {
     return newType.images.map((url, idx) => ({
@@ -276,13 +279,10 @@ async function saveRoomTypeDetails() {
   }
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'))
-    reader.readAsDataURL(file)
-  })
+async function prepareRoomTypeImage(file) {
+  const compressed = await compressImage(file, { maxWidth: 1600, quality: 0.82 })
+  const dataUrl = `data:${compressed.mime};base64,${compressed.base64}`
+  return { image_data: dataUrl, image_mime: compressed.mime, preview: dataUrl }
 }
 
 async function uploadRoomTypeImages(event) {
@@ -291,6 +291,7 @@ async function uploadRoomTypeImages(event) {
   if (!roomTypeForm.id || !files.length) return
   if (roomTypeForm.image_files.length >= 5) {
     roomTypeErr.value = 'อัปโหลดรูปได้ไม่เกิน 5 รูป'
+    await Swal.fire({ title: 'อัปโหลดรูปได้ไม่เกิน 5 รูป', icon: 'warning' })
     return
   }
   roomTypeUploading.value = true
@@ -299,16 +300,18 @@ async function uploadRoomTypeImages(event) {
   try {
     for (const file of files) {
       if (roomTypeForm.image_files.length >= 5) break
-      const dataUrl = await readFileAsDataUrl(file)
+      const payload = await prepareRoomTypeImage(file)
       const { data } = await api.post(
         `/api/admin/${hotelSlug.value}/room-types/${roomTypeForm.id}/images`,
-        { image_data: dataUrl, image_mime: file.type },
+        { image_data: payload.image_data, image_mime: payload.image_mime },
       )
       applyRoomTypeRow(data)
     }
     roomTypeMsg.value = 'อัปโหลดรูปแล้ว'
   } catch (err) {
-    roomTypeErr.value = err?.response?.data?.error || 'อัปโหลดรูปไม่สำเร็จ'
+    const msg = err?.response?.data?.error || err?.message || 'อัปโหลดรูปไม่สำเร็จ'
+    roomTypeErr.value = msg
+    await Swal.fire({ title: 'อัปโหลดรูปไม่สำเร็จ', text: msg, icon: 'error' })
   } finally {
     roomTypeUploading.value = false
   }
@@ -639,10 +642,9 @@ async function addRoomType() {
       const { data } = await api.post(`/api/admin/${hotelSlug.value}/room-types`, base)
       typeId = data.id
       for (const item of pendingTypeImages.value) {
-        const dataUrl = await readFileAsDataUrl(item.file)
         await api.post(
           `/api/admin/${hotelSlug.value}/room-types/${typeId}/images`,
-          { image_data: dataUrl, image_mime: item.file.type },
+          { image_data: item.image_data, image_mime: item.image_mime },
         )
       }
     }
@@ -715,29 +717,30 @@ async function uploadLocalTypeImages(event) {
     return
   }
 
-  if (!editingTypeId.value) {
-    const room = 5 - used
-    for (const file of files.slice(0, room)) {
-      const preview = await readFileAsDataUrl(file)
-      pendingTypeImages.value.push({ file, preview })
-    }
-    return
-  }
-
   typeImageUploading.value = true
   roomsError.value = ''
   try {
+    if (!editingTypeId.value) {
+      const room = 5 - used
+      for (const file of files.slice(0, room)) {
+        pendingTypeImages.value.push(await prepareRoomTypeImage(file))
+      }
+      return
+    }
+
     for (const file of files) {
       if (newType.image_files.length >= 5) break
-      const dataUrl = await readFileAsDataUrl(file)
+      const payload = await prepareRoomTypeImage(file)
       const { data } = await api.post(
         `/api/admin/${hotelSlug.value}/room-types/${editingTypeId.value}/images`,
-        { image_data: dataUrl, image_mime: file.type },
+        { image_data: payload.image_data, image_mime: payload.image_mime },
       )
       applyLocalTypeImages(data)
     }
   } catch (err) {
-    roomsError.value = err?.response?.data?.error || 'อัปโหลดรูปไม่สำเร็จ'
+    const msg = err?.response?.data?.error || err?.message || 'อัปโหลดรูปไม่สำเร็จ'
+    roomsError.value = msg
+    await Swal.fire({ title: 'อัปโหลดรูปไม่สำเร็จ', text: msg, icon: 'error' })
   } finally {
     typeImageUploading.value = false
   }
@@ -1832,13 +1835,23 @@ async function shareHotelLink() {
             <div class="form-field form-field--full">
               <span class="form-label">รูปประเภทห้อง ({{ localTypeImageCount }}/5)</span>
               <input
+                ref="localTypeFileRef"
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept="image/*"
                 multiple
+                class="hidden-file"
                 :disabled="typeImageUploading || inventoryBusy || localTypeImageCount >= 5"
                 @change="uploadLocalTypeImages"
               />
-              <p class="form-hint">รูปแรก = รูปหน้าปกในหน้าจอง · จัดลำดับด้วยลูกศร</p>
+              <button
+                type="button"
+                class="btn btn-outline"
+                :disabled="typeImageUploading || inventoryBusy || localTypeImageCount >= 5"
+                @click="localTypeFileRef?.click()"
+              >
+                {{ typeImageUploading ? 'กำลังอัปโหลด...' : 'ถ่ายหรือเลือกรูป' }}
+              </button>
+              <p class="form-hint">รูปแรก = รูปหน้าปกในหน้าจอง · จัดลำดับด้วยลูกศร · ถ่ายจากมือถือหรือเลือกจากคลังได้</p>
               <div v-if="localTypePreviews.length" class="roomtype-thumbs">
                 <div v-for="item in localTypePreviews" :key="`${item.pending ? 'p' : 's'}-${item.idx}-${item.filename || item.url}`" class="roomtype-thumb">
                   <img :src="item.pending ? item.url : apiMediaUrl(item.url)" :alt="`รูป ${item.idx + 1}`" />
@@ -2121,13 +2134,23 @@ async function shareHotelLink() {
             <div class="form-row">
               <label class="form-label">รูป Roomtype ({{ roomTypeForm.image_files.length }}/5)</label>
               <input
+                ref="roomTypeFileRef"
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept="image/*"
                 multiple
+                class="hidden-file"
                 :disabled="roomTypeUploading || roomTypeForm.image_files.length >= 5"
                 @change="uploadRoomTypeImages"
               />
-              <p class="form-hint">รูปแรก = รูปหน้าปกในหน้าจอง · จัดลำดับด้วยลูกศร</p>
+              <button
+                type="button"
+                class="btn btn-outline"
+                :disabled="roomTypeUploading || roomTypeForm.image_files.length >= 5"
+                @click="roomTypeFileRef?.click()"
+              >
+                {{ roomTypeUploading ? 'กำลังอัปโหลด...' : 'ถ่ายหรือเลือกรูป' }}
+              </button>
+              <p class="form-hint">รูปแรก = รูปหน้าปกในหน้าจอง · จัดลำดับด้วยลูกศร · ถ่ายจากมือถือหรือเลือกจากคลังได้</p>
             </div>
             <div v-if="roomTypeForm.images.length" class="roomtype-thumbs">
               <div v-for="(url, idx) in roomTypeForm.images" :key="roomTypeForm.image_files[idx] || url" class="roomtype-thumb">
@@ -2737,6 +2760,17 @@ async function shareHotelLink() {
 .form-row      { display: flex; flex-direction: column; gap: var(--space-1); }
 .form-label    { font-size: var(--text-sm); font-weight: 600; color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 2px; }
 .form-hint     { font-size: var(--text-label); font-weight: 400; color: var(--color-text-muted); }
+.hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .form-input    { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: inherit; font-size: var(--text-sm); font-family: monospace; }
 .form-input:focus { outline: none; border-color: var(--color-primary); }
 .kiosk-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
