@@ -117,6 +117,13 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function formatBaht(n) {
+  return Number(n || 0).toLocaleString('th-TH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 function saveQrCode() {
   if (!qrCodeImage.value) return
   const id = String(bookingId.value || '').replace(/-/g, '').slice(0, 8) || 'booking'
@@ -174,7 +181,7 @@ onUnmounted(() => {
           </div>
           <div class="summary-row summary-total">
             <span class="summary-label">{{ payAmountLabel }}</span>
-            <span class="summary-value price">฿{{ depositAmount.toLocaleString() }}</span>
+            <span class="summary-value price">฿{{ formatBaht(depositAmount) }}</span>
           </div>
         </div>
         <BookingPolicyNotes
@@ -204,7 +211,7 @@ onUnmounted(() => {
           <div class="qr-wrap">
             <img v-if="qrCodeImage" :src="qrCodeImage" alt="QR PromptPay" class="qr-img" />
           </div>
-          <p class="qr-amount">฿{{ depositAmount.toLocaleString() }}</p>
+          <p class="qr-amount">฿{{ formatBaht(depositAmount) }}</p>
           <p v-if="bankAccountName" class="qr-name">{{ bankAccountName }}</p>
           <p class="qr-id">{{ promptpayId }}</p>
           <button
