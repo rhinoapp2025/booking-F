@@ -438,7 +438,7 @@ async function uploadNetworkImage(kind, event) {
   errorMsg.value = ''
   try {
     const compressed = await compressImage(file, {
-      maxWidth: kind === 'logo' ? 800 : 1400,
+      maxWidth: kind === 'logo' ? 800 : 1920,
       quality: 0.86,
     })
     const { data } = await api.post('/api/admin/platform/network-branding/image', {
@@ -538,7 +538,7 @@ onUnmounted(() => {
           <div class="section-head">
             <div>
               <h2 class="info-title">หน้ารวม</h2>
-              <p class="muted">ชื่อ โลโก้ รูปหน้าปก และธีมสีของหน้าค้นหาทุกสาขา</p>
+              <p class="muted">ชื่อ โลโก้ พื้นหลังหน้าค้นหา และธีมสีของหน้าค้นหาทุกสาขา</p>
             </div>
             <button class="btn btn-primary" type="button" :disabled="savingNetwork" @click="saveNetwork">
               {{ savingNetwork ? 'กำลังบันทึก...' : 'บันทึกหน้ารวม' }}
@@ -583,13 +583,13 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="form-row">
-              <label class="form-label">รูปหน้าปก</label>
-              <img v-if="networkHeroUrl" :src="networkHeroUrl" alt="รูปหน้ารวม" class="brand-preview brand-preview--hero" />
+              <label class="form-label">พื้นหลังหน้าค้นหา</label>
+              <img v-if="networkHeroUrl" :src="networkHeroUrl" alt="พื้นหลังหน้ารวม" class="brand-preview brand-preview--hero" />
               <div class="brand-upload-actions">
                 <input
                   ref="heroFileRef"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/*"
                   class="hidden-file"
                   :disabled="Boolean(uploadingKind)"
                   @change="uploadNetworkImage('hero', $event)"
@@ -600,7 +600,7 @@ onUnmounted(() => {
                   :disabled="Boolean(uploadingKind)"
                   @click="heroFileRef?.click()"
                 >
-                  {{ uploadingKind === 'hero' ? 'กำลังอัปโหลด...' : 'อัปโหลดรูป' }}
+                  {{ uploadingKind === 'hero' ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปพื้นหลัง' }}
                 </button>
                 <button
                   v-if="networkHeroUrl"
@@ -612,6 +612,7 @@ onUnmounted(() => {
                   ลบ
                 </button>
               </div>
+              <span class="form-hint">รูปแนวนอนด้านบนหน้ารวม — การ์ดค้นหาจะทับรูปนี้</span>
             </div>
           </div>
 
@@ -974,6 +975,7 @@ onUnmounted(() => {
 .create-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-2); }
 .form-row { display: flex; flex-direction: column; gap: var(--space-1); }
 .form-label { font-size: var(--text-sm); font-weight: 600; color: var(--color-text-secondary); }
+.form-hint { font-size: var(--text-label); font-weight: 400; color: var(--color-text-muted); }
 .form-input { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: inherit; font-size: var(--text-sm); background: var(--color-surface); }
 .feature-group { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
 .catalog-summary-row {

@@ -118,6 +118,19 @@ function coverUrl(hotel) {
   return apiMediaUrl(hotel.login_image_url || hotel.cover_image || '')
 }
 
+function hotelSearchBanner(hotel) {
+  if (!hotel) return ''
+  return apiMediaUrl(hotel.banner_url || hotel.login_image_url || '')
+}
+
+const searchHeroUrl = computed(() => {
+  if (networkBranding.heroUrl) return networkBranding.heroUrl
+  const fromStore = hotelSearchBanner(hotelStore.hotel)
+  if (fromStore) return fromStore
+  const fromList = hotels.value.find((h) => h.banner_url || h.login_image_url)
+  return hotelSearchBanner(fromList)
+})
+
 function formatDateShort(dateStr) {
   if (!dateStr) return ''
   return new Date(`${dateStr}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
@@ -331,35 +344,91 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="booking-page app-page">
+  <div class="network-home app-page">
     <AccountMenuDrawer ref="accountMenuRef" />
 
-    <header class="page-header">
-      <div class="hotel-heading">
-        <img
-          v-if="networkBranding.logoUrl"
-          :src="networkBranding.logoUrl"
-          class="hotel-logo"
-          :alt="networkBranding.name"
-        />
-        <h1 class="page-title">{{ networkBranding.name }}</h1>
-      </div>
-      <button class="icon-btn" type="button" aria-label="บัญชี" @click="onAccountClick">
-        <i class="ti ti-user-circle"></i>
-      </button>
-    </header>
-
-    <img
-      v-if="networkBranding.heroUrl"
-      :src="networkBranding.heroUrl"
+    <section
       class="network-hero"
-      :alt="networkBranding.name"
-    />
+      :class="{ 'has-photo': Boolean(searchHeroUrl), 'is-my': tab === 'my' }"
+    >
+      <div class="network-hero-media" aria-hidden="true">
+        <img v-if="searchHeroUrl" :src="searchHeroUrl" alt="" />
+      </div>
 
-    <div class="tab-bar">
-      <button type="button" :class="['tab-btn', { active: tab === 'search' }]" @click="openSearchTab">ค้นหาโรงแรม</button>
-      <button type="button" :class="['tab-btn', { active: tab === 'my' }]" @click="openMyBookings">การจองของฉัน</button>
-    </div>
+      <header class="network-hero-bar">
+        <div class="network-hero-brand">
+          <img
+            v-if="networkBranding.logoUrl"
+            :src="networkBranding.logoUrl"
+            class="network-hero-logo"
+            :alt="networkBranding.name"
+          />
+        </div>
+        <button class="icon-btn network-hero-account" type="button" aria-label="บัญชี" @click="onAccountClick">
+          <i class="ti ti-user-circle"></i>
+        </button>
+      </header>
+
+      <div class="network-hero-inner">
+        <h1 class="network-hero-title">{{ networkBranding.name }}</h1>
+        <div class="network-tabs" role="tablist" aria-label="หน้ารวม">
+          <button
+            type="button"
+            class="network-tab"
+            :class="{ active: tab === 'search' }"
+            role="tab"
+            :aria-selected="tab === 'search'"
+            @click="openSearchTab"
+          >
+            ค้นหาโรงแรม
+          </button>
+          <button
+            type="button"
+            class="network-tab"
+            :class="{ active: tab === 'my' }"
+            role="tab"
+            :aria-selected="tab === 'my'"
+            @click="openMyBookings"
+          >
+            การจองของฉัน
+          </button>
+        </div>
+
+        <div v-if="tab === 'search'" ref="searchFormRef" class="network-search-card">
+          <div class="form-row search-province">
+            <label class="form-label">จังหวัด</label>
+            <select v-model="province" class="form-input">
+              <option value="">ทุกจังหวัด</option>
+              <option v-if="province && !provinces.includes(province)" :value="province">{{ province }}</option>
+              <option v-for="name in provinces" :key="name" :value="name">{{ name }}</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">เช็คอิน</label>
+            <input v-model="checkIn" type="date" class="form-input" :min="today" />
+          </div>
+          <div class="form-row">
+            <label class="form-label">เช็คเอาต์</label>
+            <input v-model="checkOut" type="date" class="form-input" :min="minCheckOut" />
+          </div>
+          <div class="form-row-inline">
+            <div class="form-row">
+              <label class="form-label">ผู้ใหญ่</label>
+              <input v-model.number="numAdults" type="number" class="form-input" min="1" max="10" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">เด็ก</label>
+              <input v-model.number="numChildren" type="number" class="form-input" min="0" max="10" />
+            </div>
+          </div>
+          <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
+          <button type="button" class="btn btn-primary network-search-btn" :disabled="searching" @click="searchHotels">
+            <i class="ti ti-search"></i>
+            {{ searching ? 'กำลังค้นหา...' : 'ค้นหา' }}
+          </button>
+        </div>
+      </div>
+    </section>
 
     <button
       v-show="showSearchSticky"
@@ -380,41 +449,7 @@ onUnmounted(() => {
       <i class="ti ti-chevron-up search-sticky-edit" aria-hidden="true"></i>
     </button>
 
-    <section v-if="tab === 'search'" class="booking-section">
-      <div ref="searchFormRef" class="card search-form">
-        <div class="form-row">
-          <label class="form-label">เช็คอิน</label>
-          <input v-model="checkIn" type="date" class="form-input" :min="today" />
-        </div>
-        <div class="form-row">
-          <label class="form-label">เช็คเอาต์</label>
-          <input v-model="checkOut" type="date" class="form-input" :min="minCheckOut" />
-        </div>
-        <div class="form-row search-province">
-          <label class="form-label">จังหวัด</label>
-          <select v-model="province" class="form-input">
-            <option value="">ทุกจังหวัด</option>
-            <option v-if="province && !provinces.includes(province)" :value="province">{{ province }}</option>
-            <option v-for="name in provinces" :key="name" :value="name">{{ name }}</option>
-          </select>
-        </div>
-        <div class="form-row-inline">
-          <div class="form-row">
-            <label class="form-label">ผู้ใหญ่</label>
-            <input v-model.number="numAdults" type="number" class="form-input" min="1" max="10" />
-          </div>
-          <div class="form-row">
-            <label class="form-label">เด็ก</label>
-            <input v-model.number="numChildren" type="number" class="form-input" min="0" max="10" />
-          </div>
-        </div>
-        <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
-        <button type="button" class="btn btn-primary search-btn" :disabled="searching" @click="searchHotels">
-          <i class="ti ti-search"></i>
-          {{ searching ? 'กำลังค้นหา...' : 'ค้นหาห้องว่าง' }}
-        </button>
-      </div>
-
+    <section v-if="tab === 'search'" class="network-body">
       <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
       <div v-if="searching && !searched" class="state-card">
@@ -495,7 +530,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section v-else class="booking-section">
+    <section v-else class="network-body">
       <div v-if="!auth.isLoggedIn" class="state-card">
         <i class="ti ti-lock state-card-icon"></i>
         <p class="state-card-title">กรุณาเข้าสู่ระบบ</p>
@@ -593,30 +628,139 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.booking-page { padding-bottom: max(var(--space-6), env(safe-area-inset-bottom, 0px)); }
-.page-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--page-padding-x); }
-.hotel-heading { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.hotel-logo {
-  height: 36px;
-  width: auto;
-  max-width: 40px;
-  object-fit: contain;
-  flex-shrink: 0;
+.network-home {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  background: #fff;
+  overflow-x: clip;
+  padding-bottom: max(var(--space-6), env(safe-area-inset-bottom, 0px));
 }
 .network-hero {
-  display: block;
-  width: calc(100% - var(--page-padding-x) * 2);
-  margin: 0 var(--page-padding-x) var(--space-3);
-  max-height: 140px;
-  object-fit: cover;
-  border-radius: var(--radius-md);
+  position: relative;
+  padding-bottom: 28px;
 }
-.page-title { font-size: var(--text-h1); font-weight: 700; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-bar { display: flex; gap: var(--space-2); padding: 0 var(--page-padding-x) var(--space-3); }
-.tab-btn { flex: 1; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: transparent; font-family: inherit; cursor: pointer; font-size: var(--text-sm); }
-.tab-btn.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-.booking-section { padding: 0 var(--page-padding-x); display: flex; flex-direction: column; gap: var(--space-4); }
-.search-form { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.network-hero.has-photo { padding-bottom: 52px; }
+.network-hero.is-my { padding-bottom: 20px; }
+.network-hero-media {
+  position: absolute;
+  inset: 0 0 48px 0;
+  overflow: hidden;
+  border-radius: 0 0 36px 36px;
+  background: linear-gradient(160deg, #0b3a5b 0%, #1a6a8a 45%, #4aa3b8 100%);
+}
+.network-hero.is-my .network-hero-media { inset: 0; }
+.network-hero-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  max-width: none;
+}
+.network-hero-media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 13, 26, 0.28) 0%, rgba(0, 13, 26, 0.08) 42%, rgba(255, 255, 255, 0) 72%);
+  pointer-events: none;
+}
+.network-hero-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: calc(env(safe-area-inset-top, 0px) + var(--space-3)) var(--page-padding-x) 0;
+}
+.network-hero-brand { min-width: 0; }
+.network-hero-logo {
+  height: 36px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.35));
+}
+.network-hero-account {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-sm);
+}
+.network-hero-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-5) var(--page-padding-x) 0;
+}
+.network-hero-title {
+  margin: 0 0 var(--space-4);
+  color: #fff;
+  text-align: center;
+  font-size: clamp(22px, 5vw, 34px);
+  font-weight: 700;
+  line-height: 1.25;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  max-width: 16em;
+}
+.network-tabs {
+  display: flex;
+  gap: 4px;
+  width: min(420px, 100%);
+  padding: 4px;
+  margin: 0 0 var(--space-4);
+  background: #fff;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-md);
+}
+.network-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.network-tab.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+.network-search-card {
+  position: relative;
+  width: min(920px, 100%);
+  background: #fff;
+  border-radius: 24px;
+  padding: var(--space-4) var(--space-4) 36px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-shadow: 0 12px 40px rgba(0, 21, 41, 0.14);
+}
+.network-search-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 50%);
+  width: auto;
+  min-width: 168px;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+.network-body {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 36px var(--page-padding-x) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-sizing: border-box;
+}
 .form-row { display: flex; flex-direction: column; gap: var(--space-1); }
 .form-row-inline { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 .form-label { font-size: var(--text-label); font-weight: 500; color: var(--color-text-secondary); }
@@ -631,14 +775,12 @@ onUnmounted(() => {
   min-height: var(--touch-min);
 }
 .nights-label { font-size: var(--text-sm); color: var(--color-text-muted); text-align: center; margin: 0; }
-.search-btn { width: 100%; }
 .search-sticky {
   position: fixed;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
-  max-width: var(--page-max-width);
   z-index: var(--z-sticky);
   display: flex;
   align-items: center;
@@ -772,52 +914,37 @@ onUnmounted(() => {
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-@media (min-width: 900px) {
-  .booking-page {
-    max-width: 1120px;
-    width: 100%;
-    margin: 0 auto;
-  }
-  .tab-bar { justify-content: flex-start; }
-  .tab-btn { flex: 0 0 auto; min-width: 168px; }
-  .search-sticky {
-    left: 0;
-    transform: none;
-    width: 100%;
-    max-width: none;
-  }
-  .search-form {
-    max-width: none;
-    width: 100%;
+@media (min-width: 720px) {
+  .network-hero { min-height: 340px; }
+  .network-hero-media { inset: 0 0 64px 0; border-radius: 0 0 48px 48px; }
+  .network-hero-inner { padding-top: var(--space-6); }
+  .network-search-card {
     display: grid;
-    grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) minmax(150px, 1fr) minmax(200px, 1.1fr) auto;
+    grid-template-columns: minmax(160px, 1.3fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(180px, 1.1fr);
     align-items: end;
     gap: var(--space-3) var(--space-4);
+    padding: var(--space-5) var(--space-5) 40px;
   }
-  .search-form .form-input {
-    min-height: var(--btn-primary-height);
-  }
-  .search-form .nights-label {
-    grid-column: 1 / 5;
-    grid-row: 2;
+  .network-search-card .nights-label {
+    grid-column: 1 / -1;
     text-align: left;
-    margin: 0;
   }
-  .search-form .search-btn {
-    grid-column: 5;
-    grid-row: 1;
-    align-self: end;
-    width: auto;
-    min-width: 180px;
-    height: var(--btn-primary-height);
-    min-height: var(--btn-primary-height);
-    white-space: nowrap;
-  }
+  .network-search-card .form-input { min-height: var(--btn-primary-height); }
   .room-list,
   .my-booking-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     width: 100%;
+  }
+}
+@media (min-width: 900px) {
+  .network-hero { min-height: 380px; }
+  .network-hero-title { margin-bottom: var(--space-5); }
+  .search-sticky {
+    left: 0;
+    transform: none;
+    width: 100%;
+    max-width: none;
   }
 }
 </style>

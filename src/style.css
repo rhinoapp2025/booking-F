@@ -249,6 +249,50 @@ textarea:focus-visible {
   padding-bottom: max(var(--space-4), var(--bottom-nav-safe));
 }
 
+.search-hero {
+  position: relative;
+  margin-bottom: var(--space-4);
+}
+.search-hero-media {
+  position: relative;
+  height: 196px;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+.search-hero-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  max-width: none;
+}
+.search-hero-media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 13, 26, 0.28) 0%, rgba(0, 13, 26, 0.08) 45%, transparent 78%);
+  pointer-events: none;
+}
+.search-hero-front {
+  position: relative;
+  z-index: 1;
+  padding: 0 var(--page-padding-x);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.search-hero.has-photo .search-hero-front {
+  margin-top: -92px;
+}
+.search-hero.has-photo .search-form {
+  box-shadow: var(--shadow-lg);
+}
+
+@media (min-width: 900px) {
+  .search-hero-media { height: 280px; }
+  .search-hero.has-photo .search-hero-front { margin-top: -128px; }
+}
+
 .app-header {
   position: sticky;
   top: 0;

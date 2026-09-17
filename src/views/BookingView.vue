@@ -37,6 +37,7 @@ const { hotelSlug, hotelPath } = useHotelRoute()
 const accountMenuRef = ref(null)
 const features = useFeaturesStore()
 const hotelLogoUrl = computed(() => apiMediaUrl(hotelStore.hotel?.logo_url || ''))
+const hotelBannerUrl = computed(() => apiMediaUrl(hotelStore.hotel?.banner_url || hotelStore.hotel?.login_image_url || ''))
 const lightboxIndex = ref(-1)
 const lightboxRoom = ref(null)
 const lightboxTouchX = ref(null)
@@ -586,11 +587,52 @@ onUnmounted(() => {
       </button>
     </header>
 
-    <!-- Tabs -->
-    <div class="tab-bar">
+    <div v-if="tab === 'search'" class="search-hero" :class="{ 'has-photo': Boolean(hotelBannerUrl) }">
+      <div v-if="hotelBannerUrl" class="search-hero-media">
+        <img :src="hotelBannerUrl" :alt="hotelStore.hotelName" />
+      </div>
+      <div class="search-hero-front">
+        <div class="tab-bar">
+          <button :class="['tab-btn', { active: tab === 'search' }]" @click="tab = 'search'">ค้นหาห้อง</button>
+          <button :class="['tab-btn', { active: tab === 'my' }]" @click="openMyTab">การจองของฉัน</button>
+        </div>
+        <div ref="searchFormRef" class="card search-form">
+          <div class="form-row">
+            <label class="form-label">เช็คอิน</label>
+            <input
+              v-model="checkIn"
+              type="date"
+              class="form-input"
+              :min="today"
+            />
+          </div>
+          <div class="form-row">
+            <label class="form-label">เช็คเอาต์</label>
+            <input v-model="checkOut" type="date" class="form-input" :min="minCheckOut" />
+          </div>
+          <div class="form-row-inline">
+            <div class="form-row">
+              <label class="form-label">ผู้ใหญ่</label>
+              <input v-model.number="numAdults" type="number" class="form-input" min="1" max="10" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">เด็ก</label>
+              <input v-model.number="numChildren" type="number" class="form-input" min="0" max="10" />
+            </div>
+          </div>
+          <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
+          <button class="btn btn-primary search-btn" :disabled="bookingStore.loading" @click="searchRooms">
+            <i class="ti ti-search"></i>
+            {{ bookingStore.loading ? 'กำลังค้นหา...' : 'ค้นหาห้องว่าง' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="tab-bar">
       <button :class="['tab-btn', { active: tab === 'search' }]" @click="tab = 'search'">ค้นหาห้อง</button>
       <button :class="['tab-btn', { active: tab === 'my' }]" @click="openMyTab">การจองของฉัน</button>
-      </div>
+    </div>
 
     <!-- Search Tab -->
     <button
@@ -608,37 +650,6 @@ onUnmounted(() => {
     </button>
 
     <section v-if="tab === 'search'" class="booking-section">
-      <div ref="searchFormRef" class="card search-form">
-        <div class="form-row">
-          <label class="form-label">เช็คอิน</label>
-          <input
-            v-model="checkIn"
-            type="date"
-            class="form-input"
-            :min="today"
-          />
-      </div>
-        <div class="form-row">
-          <label class="form-label">เช็คเอาต์</label>
-          <input v-model="checkOut" type="date" class="form-input" :min="minCheckOut" />
-            </div>
-        <div class="form-row-inline">
-          <div class="form-row">
-            <label class="form-label">ผู้ใหญ่</label>
-            <input v-model.number="numAdults" type="number" class="form-input" min="1" max="10" />
-            </div>
-          <div class="form-row">
-            <label class="form-label">เด็ก</label>
-            <input v-model.number="numChildren" type="number" class="form-input" min="0" max="10" />
-          </div>
-            </div>
-        <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
-        <button class="btn btn-primary search-btn" :disabled="bookingStore.loading" @click="searchRooms">
-          <i class="ti ti-search"></i>
-          {{ bookingStore.loading ? 'กำลังค้นหา...' : 'ค้นหาห้องว่าง' }}
-        </button>
-          </div>
-
       <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
       <div v-if="searchDone && bookingStore.availableRooms.length" class="room-list">
@@ -1117,9 +1128,20 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .page-title  { font-size: var(--text-h1); font-weight: 700; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-hero .tab-bar { padding: 0; }
 .tab-bar     { display: flex; gap: var(--space-2); padding: 0 var(--page-padding-x) var(--space-3); }
 .tab-btn     { flex: 1; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: transparent; font-family: inherit; cursor: pointer; font-size: var(--text-sm); }
 .tab-btn.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.search-hero.has-photo .tab-btn {
+  background: color-mix(in srgb, #fff 90%, transparent);
+  border-color: transparent;
+}
+.search-hero.has-photo .tab-btn.active {
+  background: #fff;
+  color: var(--color-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-sm);
+}
 .booking-section { padding: 0 var(--page-padding-x); display: flex; flex-direction: column; gap: var(--space-4); }
 .search-form { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .form-row    { display: flex; flex-direction: column; gap: var(--space-1); }

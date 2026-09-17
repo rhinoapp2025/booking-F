@@ -41,10 +41,12 @@ const errorMsg = ref('')
 const locationTypeOptions = ref([...DEFAULT_LOCATION_TYPE_OPTIONS])
 const logoUrl = ref('')
 const loginImageUrl = ref('')
+const bannerUrl = ref('')
 const uploadingKind = ref('')
 const tab = ref('info')
 const logoFileRef = ref(null)
 const heroFileRef = ref(null)
+const bannerFileRef = ref(null)
 
 const tabs = computed(() => {
   const items = [
@@ -188,6 +190,7 @@ async function loadConfig() {
   errorMsg.value = ''
   logoUrl.value = ''
   loginImageUrl.value = ''
+  bannerUrl.value = ''
   try {
     const { data } = await api.get(`/api/admin/${hotelSlug.value}/config`)
     assignHotel(data.hotel || {})
@@ -200,6 +203,7 @@ async function loadConfig() {
     applyHotelTheme(savedTheme)
     logoUrl.value = apiMediaUrl(data.hotel?.logo_url)
     loginImageUrl.value = apiMediaUrl(data.hotel?.login_image_url)
+    bannerUrl.value = apiMediaUrl(data.hotel?.banner_url)
   } catch (err) {
     errorMsg.value = err?.response?.data?.error || 'โหลดการตั้งค่าไม่สำเร็จ'
   } finally {
@@ -259,7 +263,7 @@ async function uploadBrandImage(kind, event) {
   errorMsg.value = ''
   try {
     const compressed = await compressImage(file, {
-      maxWidth: kind === 'logo' ? 800 : 1400,
+      maxWidth: kind === 'logo' ? 800 : 1920,
       quality: 0.86,
     })
     const { data } = await api.post(`/api/admin/${hotelSlug.value}/ui-image`, {
@@ -269,15 +273,21 @@ async function uploadBrandImage(kind, event) {
     })
     const url = apiMediaUrl(data.url)
     if (kind === 'logo') logoUrl.value = url
+    else if (kind === 'banner') bannerUrl.value = url
     else loginImageUrl.value = url
     if (hotelStore.hotel) {
       hotelStore.hotel = {
         ...hotelStore.hotel,
         logo_url: kind === 'logo' ? data.url : hotelStore.hotel.logo_url,
         login_image_url: kind === 'hero' ? data.url : hotelStore.hotel.login_image_url,
+        banner_url: kind === 'banner' ? data.url : hotelStore.hotel.banner_url,
       }
     }
-    message.value = kind === 'logo' ? 'อัปโหลดโลโก้แล้ว' : 'อัปโหลดรูปหน้าล็อกอินแล้ว'
+    message.value = kind === 'logo'
+      ? 'อัปโหลดโลโก้แล้ว'
+      : kind === 'banner'
+        ? 'อัปโหลดพื้นหลังหน้าจองแล้ว'
+        : 'อัปโหลดรูปหน้าล็อกอินแล้ว'
   } catch (err) {
     errorMsg.value = err?.response?.data?.error || err?.message || 'อัปโหลดรูปไม่สำเร็จ'
   } finally {
@@ -291,12 +301,14 @@ async function removeBrandImage(kind) {
   try {
     await api.delete(`/api/admin/${hotelSlug.value}/ui-image/${kind}`)
     if (kind === 'logo') logoUrl.value = ''
+    else if (kind === 'banner') bannerUrl.value = ''
     else loginImageUrl.value = ''
     if (hotelStore.hotel) {
       hotelStore.hotel = {
         ...hotelStore.hotel,
         logo_url: kind === 'logo' ? '' : hotelStore.hotel.logo_url,
         login_image_url: kind === 'hero' ? '' : hotelStore.hotel.login_image_url,
+        banner_url: kind === 'banner' ? '' : hotelStore.hotel.banner_url,
       }
     }
     message.value = 'ลบรูปแล้ว'
@@ -525,6 +537,41 @@ watch(hotelSlug, () => {
         </div>
 
         <button class="btn btn-outline" type="button" @click="resetTheme">คืนค่าเริ่มต้น</button>
+
+        <h3 class="group-title">ส่วนกลาง</h3>
+        <p class="muted">รูปพื้นหลังด้านบนหน้าจองของสาขานี้ และหน้าค้นหาโรงแรมถ้าหน้ารวมยังไม่มีรูปของตัวเอง — การ์ดค้นหาจะทับรูป</p>
+        <div class="form-row">
+          <label class="form-label">พื้นหลังหน้าจอง</label>
+          <img v-if="bannerUrl" :src="bannerUrl" alt="พื้นหลังหน้าจอง" class="brand-preview brand-preview--banner" />
+          <div class="brand-upload-actions">
+            <input
+              ref="bannerFileRef"
+              type="file"
+              accept="image/*"
+              class="hidden-file"
+              :disabled="Boolean(uploadingKind)"
+              @change="uploadBrandImage('banner', $event)"
+            />
+            <button
+              class="btn btn-outline"
+              type="button"
+              :disabled="Boolean(uploadingKind)"
+              @click="bannerFileRef?.click()"
+            >
+              {{ uploadingKind === 'banner' ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปพื้นหลัง' }}
+            </button>
+            <button
+              v-if="bannerUrl"
+              class="btn btn-outline"
+              type="button"
+              :disabled="Boolean(uploadingKind)"
+              @click="removeBrandImage('banner')"
+            >
+              ลบ
+            </button>
+          </div>
+          <span class="form-hint">แนะนำรูปแนวนอน กว้าง เช่น วิวโรงแรมหรือทะเล — ว่าง = ไม่มีพื้นหลังรูป</span>
+        </div>
       </section>
 
       <section v-show="tab === 'brand'" class="card config-card">
@@ -855,6 +902,7 @@ watch(hotelSlug, () => {
   background: linear-gradient(to top, var(--color-background) 70%, transparent);
 }
 .info-title { font-size: var(--text-h3); font-weight: 700; margin: 0; }
+.group-title { font-size: var(--text-body); font-weight: 700; margin: var(--space-5) 0 0; }
 .muted { color: var(--color-text-muted); font-size: var(--text-sm); margin: 0; }
 .form-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
 .form-row { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -949,6 +997,7 @@ watch(hotelSlug, () => {
 .brand-preview { width: 100%; border-radius: var(--radius-md); border: 1px solid var(--color-border); object-fit: cover; background: var(--color-surface); }
 .brand-preview--logo { width: 96px; height: 96px; object-fit: contain; padding: var(--space-2); }
 .brand-preview--hero { max-height: 180px; object-fit: cover; }
+.brand-preview--banner { max-height: 140px; width: 100%; object-fit: cover; }
 .brand-upload-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .hidden-file {
   position: absolute;
