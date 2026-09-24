@@ -247,6 +247,18 @@ const stayCharges = computed(() => applyStayCharges(staySubtotal.value, {
 const stayTotal = computed(() => stayCharges.value.total)
 const modalTitle = computed(() => (bookingStep.value === 'plan' ? 'เลือกเรทแพลน' : 'ยืนยันการจอง'))
 
+function roundMoney(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100
+}
+
+const paymentDue = computed(() => {
+  if (!features.paymentEnabled) return 0
+  const pct = bookingStore.collectFull ? 100 : (Number(bookingStore.depositPercent) || 0)
+  if (pct <= 0) return 0
+  return roundMoney(stayTotal.value * (pct / 100))
+})
+const needsSlipBeforeBook = computed(() => paymentDue.value > 0)
+
 function setBreakfastCount(n) {
   const max = guestCount.value
   breakfastCount.value = Math.min(max, Math.max(1, Number(n) || 1))
@@ -398,7 +410,7 @@ async function confirmBooking() {
   try {
     const includeBreakfast = breakfastLockedIn.value
       || Boolean(wantBreakfast.value && breakfastOffered.value)
-    const booking = await bookingStore.createBooking(hotelSlug.value, {
+    const payload = {
       check_in_date:   checkIn.value,
       check_out_date:  checkOut.value,
       num_adults:      numAdults.value,
@@ -423,7 +435,34 @@ async function confirmBooking() {
       guest_address2:  guestAddress2.value.trim() || undefined,
       guest_address3:  guestAddress3.value.trim() || undefined,
       guest_name:      [guestTitle.value, guestFirstName.value.trim(), guestLastName.value.trim()].filter(Boolean).join(' '),
-    })
+    }
+    if (needsSlipBeforeBook.value) {
+      sessionStorage.setItem(`booking-checkout:${hotelSlug.value}`, JSON.stringify({
+        hotelSlug: hotelSlug.value,
+        payload,
+        summary: {
+          roomName: selectedRoomType.value?.name || '',
+          planName: selectedPlan.value?.name || '',
+          checkIn: checkIn.value,
+          checkOut: checkOut.value,
+          nights: nights.value,
+          roomTotal: roomStayTotal.value,
+          breakfastTotal: breakfastStayTotal.value,
+          subtotal: staySubtotal.value,
+          serviceCharge: stayCharges.value.service_charge,
+          servicePercent: stayCharges.value.service_charge_percent,
+          vat: stayCharges.value.vat,
+          vatPercent: stayCharges.value.vat_percent,
+          total: stayTotal.value,
+          deposit: paymentDue.value,
+          collectFull: bookingStore.collectFull,
+        },
+      }))
+      showModal.value = false
+      router.push(`/${hotelSlug.value}/payment/checkout`)
+      return
+    }
+    const booking = await bookingStore.createBooking(hotelSlug.value, payload)
     auth.fetchMe().catch(() => null)
   showModal.value = false
     if (booking?.status === 'awaiting_payment' && features.paymentEnabled) {
@@ -949,18 +988,11 @@ onUnmounted(() => {
               </div>
               </template>
             </div>
-            <div v-if="stayCharges.service_charge" class="summary-row">
-              <span class="summary-label">Service Charge {{ stayCharges.service_charge_percent }}%</span>
-              <span class="summary-value">฿{{ stayCharges.service_charge.toLocaleString() }}</span>
-            </div>
-            <div v-if="stayCharges.vat" class="summary-row">
-              <span class="summary-label">VAT {{ stayCharges.vat_percent }}%</span>
-              <span class="summary-value">฿{{ stayCharges.vat.toLocaleString() }}</span>
-            </div>
             <div class="summary-row summary-total">
               <span class="summary-label">ราคารวม</span>
-              <span class="summary-value price">฿{{ stayTotal.toLocaleString() }}</span>
+              <span class="summary-value price">฿{{ staySubtotal.toLocaleString() }}</span>
             </div>
+            <p class="price-note">ราคานี้ไม่รวม VAT กับ Service</p>
             <BookingPolicyNotes
               :cancellation-policy="hotelStore.hotel?.cancellation_policy"
               :non-smoking="Boolean(hotelStore.hotel?.non_smoking)"
@@ -1067,7 +1099,7 @@ onUnmounted(() => {
             :disabled="busy"
             @click="confirmBooking"
           >
-            {{ busy ? 'กำลังจอง...' : 'ยืนยันการจอง' }}
+            {{ busy ? 'กำลังดำเนินการ...' : (needsSlipBeforeBook ? 'ไปชำระเงิน' : 'ยืนยันการจอง') }}
           </button>
           </div>
         </div>
@@ -1438,6 +1470,7 @@ onUnmounted(() => {
 .summary-label { color: var(--color-text-muted); }
 .summary-total { border-top: 1px solid var(--color-border); padding-top: var(--space-2); font-weight: 600; }
 .price { color: var(--color-primary); font-size: var(--text-lg); }
+.price-note { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--color-text-muted); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (min-width: 900px) {

@@ -8,6 +8,7 @@ import { useBookingStore } from '../stores/booking'
 import api from '../api/axios'
 import { compressImage } from '../utils/compressChatImage'
 import BookingPolicyNotes from '../components/BookingPolicyNotes.vue'
+import { applyStayCharges } from '../utils/stayCharges'
 
 const route        = useRoute()
 const router       = useRouter()
@@ -24,8 +25,16 @@ const bankName        = ref('')
 const bankAccountName = ref('')
 const bankAccountNo   = ref('')
 const payMode = ref('deposit')
-const depositAmount  = computed(() => Number(booking.value?.deposit_amount) || 0)
+const servicePercent = ref(0)
+const vatPercent = ref(0)
+const checkout = ref(null)
+const isCheckout = computed(() => String(bookingId.value) === 'checkout')
+const depositAmount  = computed(() => {
+  if (checkout.value) return Number(checkout.value.summary?.deposit) || 0
+  return Number(booking.value?.deposit_amount) || 0
+})
 const collectFull = computed(() => {
+  if (checkout.value?.summary) return Boolean(checkout.value.summary.collectFull) || payMode.value === 'full'
   const total = Number(booking.value?.total_price) || 0
   const due = depositAmount.value
   if (total > 0 && due >= total) return true
@@ -33,6 +42,39 @@ const collectFull = computed(() => {
 })
 const payTitle = computed(() => collectFull.value ? 'ชำระเงิน' : 'ชำระมัดจำ')
 const payAmountLabel = computed(() => collectFull.value ? 'ยอดชำระ' : 'ยอดมัดจำ')
+
+const priceLines = computed(() => {
+  if (checkout.value?.summary) {
+    const s = checkout.value.summary
+    return {
+      roomTotal: Number(s.roomTotal) || 0,
+      breakfastTotal: Number(s.breakfastTotal) || 0,
+      subtotal: Number(s.subtotal) || 0,
+      serviceCharge: Number(s.serviceCharge) || 0,
+      servicePercent: Number(s.servicePercent) || 0,
+      vat: Number(s.vat) || 0,
+      vatPercent: Number(s.vatPercent) || 0,
+      total: Number(s.total) || 0,
+    }
+  }
+  const rooms = Array.isArray(booking.value?.rooms) ? booking.value.rooms : []
+  const subtotal = rooms.reduce((sum, room) => sum + (Number(room.subtotal) || 0), 0)
+  const charged = applyStayCharges(subtotal, {
+    collectFull: collectFull.value,
+    serviceChargePercent: servicePercent.value,
+    vatPercent: vatPercent.value,
+  })
+  return {
+    roomTotal: subtotal,
+    breakfastTotal: 0,
+    subtotal,
+    serviceCharge: charged.service_charge,
+    servicePercent: charged.service_charge_percent,
+    vat: charged.vat,
+    vatPercent: charged.vat_percent,
+    total: charged.total || Number(booking.value?.total_price) || 0,
+  }
+})
 
 const qrCodeImage = ref('')
 const slipPreview  = ref('')
@@ -62,18 +104,68 @@ async function loadSavedSlip() {
   }
 }
 
+function applyPaySettings(pay) {
+  promptpayId.value = pay?.promptpay_number || ''
+  bankName.value = pay?.bank_name || ''
+  bankAccountName.value = pay?.bank_account_name || ''
+  bankAccountNo.value = pay?.bank_account_no || ''
+  payMode.value = pay?.payment_collect_mode === 'full' ? 'full' : 'deposit'
+  servicePercent.value = Number(pay?.service_charge_percent) || 0
+  vatPercent.value = Number(pay?.vat_percent) || 0
+}
+
+async function loadCheckout() {
+  const raw = sessionStorage.getItem(`booking-checkout:${hotelSlug.value}`)
+  if (!raw) {
+    errorMsg.value = 'ไม่พบข้อมูลการจอง กรุณากลับไปยืนยันการจองใหม่'
+    return
+  }
+  const draft = JSON.parse(raw)
+  if (draft.hotelSlug !== hotelSlug.value || !draft.payload) {
+    errorMsg.value = 'ไม่พบข้อมูลการจอง กรุณากลับไปยืนยันการจองใหม่'
+    return
+  }
+  checkout.value = draft
+  booking.value = {
+    status: 'awaiting_payment',
+    check_in_date: draft.summary?.checkIn,
+    check_out_date: draft.summary?.checkOut,
+    deposit_amount: draft.summary?.deposit,
+    cancellation_policy: null,
+  }
+  const pay = await api.get(`/api/hotels/${hotelSlug.value}/payment`).catch(() => ({ data: {} }))
+  applyPaySettings(pay.data)
+  const due = Number(draft.summary?.deposit) || 0
+  if (promptpayId.value && due > 0) {
+    try {
+      const payload = generatePayload(promptpayId.value, { amount: due })
+      qrCodeImage.value = await QRCode.toDataURL(payload)
+    } catch {
+      // no QR available
+    }
+  }
+}
+
 async function loadBooking() {
+  if (isCheckout.value) {
+    try {
+      await loadCheckout()
+    } catch (err) {
+      errorMsg.value = err?.message || 'โหลดหน้าชำระไม่สำเร็จ'
+      checkout.value = null
+      booking.value = null
+    } finally {
+      loading.value = false
+    }
+    return
+  }
   try {
     const [{ data }, pay] = await Promise.all([
       api.get(`/api/bookings/${hotelSlug.value}/${bookingId.value}`),
       api.get(`/api/hotels/${hotelSlug.value}/payment`).catch(() => ({ data: {} })),
     ])
     booking.value = data
-    promptpayId.value = pay.data?.promptpay_number || ''
-    bankName.value = pay.data?.bank_name || ''
-    bankAccountName.value = pay.data?.bank_account_name || ''
-    bankAccountNo.value = pay.data?.bank_account_no || ''
-    payMode.value = pay.data?.payment_collect_mode === 'full' ? 'full' : 'deposit'
+    applyPaySettings(pay.data)
     if (data.slip_status && !slipPreview.value) await loadSavedSlip()
     if (promptpayId.value && data.deposit_amount) {
       try {
@@ -100,13 +192,28 @@ async function handleSlipFile(e) {
     const compressed = await compressImage(file, { maxWidth: 1200, quality: 0.8 })
     const dataUrl = `data:${compressed.mime};base64,${compressed.base64}`
     setSlipPreview(dataUrl)
+    if (isCheckout.value) {
+      const created = await bookingStore.createBooking(hotelSlug.value, {
+        ...checkout.value.payload,
+        imageData: compressed.base64,
+        imageMime: compressed.mime,
+      })
+      sessionStorage.removeItem(`booking-checkout:${hotelSlug.value}`)
+      checkout.value = null
+      uploadSuccess.value = true
+      await router.replace(`/${hotelSlug.value}/payment/${created.id}`)
+      loading.value = true
+      await loadBooking()
+      uploadSuccess.value = true
+      return
+    }
     await bookingStore.uploadPaymentSlip(hotelSlug.value, bookingId.value, {
       imageData: compressed.base64,
       imageMime: compressed.mime,
     })
     uploadSuccess.value = true
   } catch (err) {
-    errorMsg.value = err?.message || bookingStore.error || 'อัปโหลดสลิปไม่สำเร็จ'
+    errorMsg.value = err?.response?.data?.error || err?.message || bookingStore.error || 'อัปโหลดสลิปไม่สำเร็จ'
   } finally {
     uploadBusy.value = false
   }
@@ -114,7 +221,9 @@ async function handleSlipFile(e) {
 
 function formatDate(d) {
   if (!d) return ''
-  return new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+  const raw = String(d).slice(0, 10)
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(d)
+  return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 function formatBaht(n) {
@@ -167,7 +276,7 @@ onUnmounted(() => {
       <section class="card payment-summary">
         <h2 class="section-title">รายละเอียดการจอง</h2>
         <div class="summary-rows">
-          <div class="summary-row">
+          <div v-if="booking.id" class="summary-row">
             <span class="summary-label">รหัสจอง</span>
             <span class="summary-value mono">{{ booking.id.slice(0, 8) }}</span>
           </div>
@@ -178,6 +287,26 @@ onUnmounted(() => {
           <div class="summary-row">
             <span class="summary-label">เช็คเอาต์</span>
             <span class="summary-value">{{ formatDate(booking.check_out_date) }}</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">ราคาห้อง</span>
+            <span class="summary-value">฿{{ formatBaht(priceLines.roomTotal) }}</span>
+          </div>
+          <div v-if="priceLines.breakfastTotal" class="summary-row">
+            <span class="summary-label">อาหารเช้า</span>
+            <span class="summary-value">฿{{ formatBaht(priceLines.breakfastTotal) }}</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Service {{ priceLines.servicePercent }}%</span>
+            <span class="summary-value">฿{{ formatBaht(priceLines.serviceCharge) }}</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">VAT {{ priceLines.vatPercent }}%</span>
+            <span class="summary-value">฿{{ formatBaht(priceLines.vat) }}</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">ราคารวม</span>
+            <span class="summary-value">฿{{ formatBaht(priceLines.total) }}</span>
           </div>
           <div class="summary-row summary-total">
             <span class="summary-label">{{ payAmountLabel }}</span>
