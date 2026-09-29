@@ -104,6 +104,8 @@ const ROOM_STATUS_LABEL = {
   inactive: 'ไม่ใช้งาน',
 }
 let roomsPollTimer = null
+let bookingsPollTimer = null
+let bookingsPollBusy = false
 
 // ── kiosk config ─────────────────────────────────────────────────────────────
 const kioskConfig = ref({
@@ -370,18 +372,37 @@ function bookingListParams(listTab = bookingListTab.value) {
   return { exclude_cancelled: '1', limit: 100 }
 }
 
-async function loadBookings() {
-  loading.value = true
+async function loadBookings({ silent = false } = {}) {
+  if (silent && bookingsPollBusy) return
+  if (silent) bookingsPollBusy = true
+  if (!silent) loading.value = true
   try {
     const { data } = await api.get(`/api/admin/${hotelSlug.value}/bookings`, {
       params: bookingListParams(),
     })
     bookings.value = data
-    revokeSlipUrls()
+    if (!silent) revokeSlipUrls()
     await loadSlipImages(data)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
+    bookingsPollBusy = false
   }
+}
+
+function stopBookingsPoll() {
+  if (bookingsPollTimer) {
+    clearInterval(bookingsPollTimer)
+    bookingsPollTimer = null
+  }
+}
+
+function startBookingsPoll() {
+  stopBookingsPoll()
+  if (tab.value !== 'bookings') return
+  bookingsPollTimer = setInterval(() => {
+    if (document.hidden) return
+    loadBookings({ silent: true })
+  }, 30000)
 }
 
 function switchBookingListTab(key) {
@@ -1368,6 +1389,8 @@ function switchTab(t) {
 watch(tab, (t) => {
   if (t === 'rooms' || t === 'dashboard') startRoomsPoll()
   else stopRoomsPoll()
+  if (t === 'bookings') startBookingsPoll()
+  else stopBookingsPoll()
 })
 
 watch(showKioskTab, (on) => {
@@ -1377,6 +1400,7 @@ watch(showKioskTab, (on) => {
 
 onUnmounted(() => {
   stopRoomsPoll()
+  stopBookingsPoll()
   window.removeEventListener('keydown', onSlipLightboxKey)
   revokeSlipUrls()
 })
