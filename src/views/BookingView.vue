@@ -212,6 +212,13 @@ const nights = computed(() => {
 })
 
 const guestCount = computed(() => Math.max(1, Number(numAdults.value) + Number(numChildren.value)))
+const roomsBooked = computed(() => {
+  const fromType = Number(selectedRoomType.value?.rooms_needed)
+  if (Number.isFinite(fromType) && fromType >= 1) return fromType
+  const max = Number(selectedRoomType.value?.max_adults)
+  if (Number.isFinite(max) && max > 0) return Math.ceil(guestCount.value / max)
+  return 1
+})
 const selectablePlans = computed(() => selectedRoomType.value?.rate_plans || [])
 const selectedPlan = computed(() =>
   selectablePlans.value.find((p) => p.id === selectedPlanId.value) || null
@@ -231,7 +238,7 @@ const abfPerPerson = computed(() => {
   const pricePerNight = computed(() =>
     Number(selectedPlan.value?.price_per_night ?? selectedRoomType.value?.price_per_night ?? 0)
   )
-const roomStayTotal = computed(() => pricePerNight.value * nights.value)
+const roomStayTotal = computed(() => pricePerNight.value * nights.value * roomsBooked.value)
 const breakfastStayTotal = computed(() => {
   if (!breakfastOffered.value) return 0
   if (breakfastLockedIn.value) return abfPerPerson.value * Number(breakfastCount.value) * nights.value
@@ -912,8 +919,12 @@ onUnmounted(() => {
               <span class="summary-value">{{ numAdults }} คน</span>
             </div>
             <div class="summary-row">
+              <span class="summary-label">จำนวนห้อง</span>
+              <span class="summary-value">{{ roomsBooked }} ห้อง</span>
+            </div>
+            <div class="summary-row">
               <span class="summary-label">ราคาห้อง / คืน</span>
-              <span class="summary-value">฿{{ pricePerNight.toLocaleString() }}</span>
+              <span class="summary-value">฿{{ pricePerNight.toLocaleString() }}<template v-if="roomsBooked > 1"> × {{ roomsBooked }} ห้อง</template></span>
             </div>
             <div v-if="breakfastOffered" class="breakfast-box">
               <p class="guest-form-title">อาหารเช้า</p>

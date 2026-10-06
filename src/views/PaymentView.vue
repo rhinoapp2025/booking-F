@@ -288,6 +288,10 @@ onUnmounted(() => {
             <span class="summary-label">เช็คเอาต์</span>
             <span class="summary-value">{{ formatDate(booking.check_out_date) }}</span>
           </div>
+          <div v-if="Number(booking.room_count) > 1" class="summary-row">
+            <span class="summary-label">จำนวนห้อง</span>
+            <span class="summary-value">{{ booking.room_count }} ห้อง</span>
+          </div>
           <div class="summary-row">
             <span class="summary-label">ราคาห้อง</span>
             <span class="summary-value">฿{{ formatBaht(priceLines.roomTotal) }}</span>
