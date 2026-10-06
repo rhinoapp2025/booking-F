@@ -1356,11 +1356,15 @@ function canCancelOnWeb(booking) {
   return ['awaiting_payment', 'pending', 'confirmed'].includes(booking.status)
 }
 
+function isFullPayment(booking) {
+  const total = Number(booking?.total_price) || 0
+  const due = Number(booking?.deposit_amount) || 0
+  return total > 0 && due >= total
+}
+
 function statusLabel(s, booking) {
   if (s === 'awaiting_payment') {
-    const total = Number(booking?.total_price) || 0
-    const due = Number(booking?.deposit_amount) || 0
-    return total > 0 && due >= total ? 'รอชำระเต็มจำนวน' : 'รอมัดจำ'
+    return isFullPayment(booking) ? 'รอชำระเต็มจำนวน' : 'รอมัดจำ'
   }
   return { pending: 'รอยืนยัน', confirmed: 'ยืนยันแล้ว', checked_in: 'เช็คอินแล้ว', checked_out: 'เช็คเอาต์แล้ว', cancelled: 'ยกเลิก' }[s] || s
 }
@@ -1605,6 +1609,9 @@ async function shareHotelLink() {
             <span class="room-tag">{{ b.rooms[0].room_type_name }} ห้อง {{ b.rooms[0].room_number }}</span>
           </div>
           <div class="booking-price">฿{{ Number(b.total_price).toLocaleString() }}</div>
+          <div v-if="Number(b.deposit_amount) > 0 && !isFullPayment(b)" class="booking-deposit">
+            มัดจำ ฿{{ Number(b.deposit_amount).toLocaleString() }}
+          </div>
           <p v-if="b.pms_resv_no" class="pms-note">
             ส่ง PMS แล้ว · ResvNo {{ b.pms_resv_no }}<span v-if="b.pms_room_no"> · ห้อง {{ b.pms_room_no }}</span>
             <span v-if="b.pms_ota_booking_no"> · เลขจองเข้าพัก {{ b.pms_ota_booking_no }}</span>
@@ -2571,7 +2578,8 @@ async function shareHotelLink() {
 .booking-dates { font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-1); }
 .booking-rooms { margin-bottom: var(--space-1); }
 .room-tag      { font-size: var(--text-label); padding: 2px var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-pill); }
-.booking-price { font-weight: 700; margin-bottom: var(--space-3); }
+.booking-price { font-weight: 700; margin-bottom: var(--space-1); }
+.booking-deposit { font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-3); }
 .slip-preview { margin: 0 0 var(--space-3); }
 .slip-open {
   position: relative;
