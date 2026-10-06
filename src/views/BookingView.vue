@@ -14,6 +14,7 @@ import BottomNav from '../components/BottomNav.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import BookingPolicyNotes from '../components/BookingPolicyNotes.vue'
 import ReviewFormModal from '../components/ReviewFormModal.vue'
+import PartyPicker from '../components/PartyPicker.vue'
 import { applyStayCharges } from '../utils/stayCharges'
 import {
   GUEST_NATIONS,
@@ -125,6 +126,7 @@ function goNetworkSearch() {
       checkOut: checkOut.value,
       adults: String(numAdults.value),
       children: String(numChildren.value),
+      rooms: String(numRooms.value),
       ...(String(route.query.province || '').trim()
         ? { province: String(route.query.province).trim() }
         : {}),
@@ -153,6 +155,7 @@ const checkOut     = ref(addDaysYmd(browserToday, 1))
 const minCheckOut = computed(() => addDaysYmd(checkIn.value || today.value, 1))
 const numAdults   = ref(1)
 const numChildren = ref(0)
+const numRooms    = ref(1)
 const searchDone  = ref(false)
 const busy        = ref(false)
 const errorMsg    = ref('')
@@ -212,11 +215,12 @@ const nights = computed(() => {
 })
 
 const guestCount = computed(() => Math.max(1, Number(numAdults.value) + Number(numChildren.value)))
+const extraBeds = computed(() => Math.max(0, Number(selectedRoomType.value?.extra_beds) || 0))
 const roomsBooked = computed(() => {
+  const picked = Number(numRooms.value)
+  if (Number.isFinite(picked) && picked >= 1) return picked
   const fromType = Number(selectedRoomType.value?.rooms_needed)
   if (Number.isFinite(fromType) && fromType >= 1) return fromType
-  const max = Number(selectedRoomType.value?.max_adults)
-  if (Number.isFinite(max) && max > 0) return Math.ceil(guestCount.value / max)
   return 1
 })
 const selectablePlans = computed(() => selectedRoomType.value?.rate_plans || [])
@@ -245,7 +249,12 @@ const breakfastStayTotal = computed(() => {
   if (!wantBreakfast.value) return 0
   return abfPerPerson.value * Number(breakfastCount.value) * nights.value
 })
-const staySubtotal = computed(() => roomStayTotal.value + breakfastStayTotal.value)
+const extraBedPerNight = computed(() => {
+  if (extraBeds.value < 1 || !selectedPlan.value?.includes_extrabed) return 0
+  return Number(selectedPlan.value.extrabed_per_night) || 0
+})
+const extraBedStayTotal = computed(() => extraBedPerNight.value * extraBeds.value * nights.value)
+const staySubtotal = computed(() => roomStayTotal.value + breakfastStayTotal.value + extraBedStayTotal.value)
 const stayCharges = computed(() => applyStayCharges(staySubtotal.value, {
   collectFull: bookingStore.collectFull,
   serviceChargePercent: bookingStore.serviceChargePercent,
@@ -290,10 +299,10 @@ function queueSearch() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => { searchRooms() }, 250)
 }
-watch([checkIn, checkOut, numAdults, numChildren], queueSearch)
+watch([checkIn, checkOut, numAdults, numChildren, numRooms], queueSearch)
 
 function staySearchKey() {
-  return `${checkIn.value}|${checkOut.value}|${numAdults.value}|${numChildren.value}`
+  return `${checkIn.value}|${checkOut.value}|${numAdults.value}|${numChildren.value}|${numRooms.value}`
 }
 const lastSearchKey = ref('')
 
@@ -309,6 +318,7 @@ async function searchRooms() {
     checkOut: checkOut.value,
     adults: numAdults.value,
     children: numChildren.value,
+    rooms: numRooms.value,
   })
   lastSearchKey.value = staySearchKey()
   searchDone.value = true
@@ -422,6 +432,7 @@ async function confirmBooking() {
       check_out_date:  checkOut.value,
       num_adults:      numAdults.value,
       num_children:    numChildren.value,
+      room_count:      numRooms.value,
       room_type_id:    selectedRoomType.value.id,
       rate_plan_id:    selectedPlanId.value || undefined,
       include_breakfast: includeBreakfast,
@@ -562,9 +573,11 @@ onMounted(async () => {
   const qOut = String(q.checkOut || q.check_out || '').slice(0, 10)
   const qAdults = parseInt(q.adults, 10)
   const qChildren = parseInt(q.children, 10)
+  const qRooms = parseInt(q.rooms, 10)
   if (qIn && qIn >= today.value) checkIn.value = qIn
   if (qOut && qOut > checkIn.value) checkOut.value = qOut
-  if (Number.isFinite(qAdults) && qAdults >= 1) numAdults.value = qAdults
+  if (Number.isFinite(qRooms) && qRooms >= 1) numRooms.value = Math.min(10, qRooms)
+  if (Number.isFinite(qAdults) && qAdults >= 1) numAdults.value = Math.max(numRooms.value, qAdults)
   if (Number.isFinite(qChildren) && qChildren >= 0) numChildren.value = qChildren
   if (String(q.tab || '') === 'my') tab.value = 'my'
 
@@ -630,16 +643,7 @@ onUnmounted(() => {
             <label class="form-label">เช็คเอาต์</label>
             <input v-model="checkOut" type="date" class="form-input" :min="minCheckOut" />
           </div>
-          <div class="form-row-inline">
-            <div class="form-row">
-              <label class="form-label">ผู้ใหญ่</label>
-              <input v-model.number="numAdults" type="number" class="form-input" min="1" max="10" />
-            </div>
-            <div class="form-row">
-              <label class="form-label">เด็ก</label>
-              <input v-model.number="numChildren" type="number" class="form-input" min="0" max="10" />
-            </div>
-          </div>
+          <PartyPicker v-model:adults="numAdults" v-model:children="numChildren" v-model:rooms="numRooms" />
           <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
           <button class="btn btn-primary search-btn" :disabled="bookingStore.loading" @click="searchRooms">
             <i class="ti ti-search"></i>
@@ -664,7 +668,7 @@ onUnmounted(() => {
     >
       <span class="search-sticky-line">
         <i class="ti ti-calendar" aria-hidden="true"></i>
-        <span class="search-sticky-text">{{ formatDateShort(checkIn) }} → {{ formatDateShort(checkOut) }} · ผู้ใหญ่ {{ numAdults }} · เด็ก {{ numChildren }}<template v-if="nights > 0"> · {{ nights }} คืน</template></span>
+        <span class="search-sticky-text">{{ formatDateShort(checkIn) }} → {{ formatDateShort(checkOut) }} · ผู้ใหญ่ {{ numAdults }} · {{ numRooms }} ห้อง<template v-if="nights > 0"> · {{ nights }} คืน</template></span>
       </span>
       <i class="ti ti-chevron-up search-sticky-edit" aria-hidden="true"></i>
     </button>
@@ -687,6 +691,7 @@ onUnmounted(() => {
             <h3 class="room-name">{{ room.name }}</h3>
           </div>
           <p v-if="Number(room.rooms_needed) > 1" class="room-view">ผู้เข้าพักนี้ใช้ {{ room.rooms_needed }} ห้อง</p>
+          <p v-if="Number(room.extra_beds) > 0" class="room-view">extrabed {{ room.extra_beds }}</p>
           <p v-if="viewLabel(room)" class="room-view"><i class="ti ti-eye"></i> {{ viewLabel(room) }}</p>
           <p v-if="room.description" class="room-desc">{{ room.description }}</p>
           <div v-if="room.size_sqm" class="room-details">
@@ -921,6 +926,10 @@ onUnmounted(() => {
             <div class="summary-row">
               <span class="summary-label">จำนวนห้อง</span>
               <span class="summary-value">{{ roomsBooked }} ห้อง</span>
+            </div>
+            <div v-if="extraBeds > 0" class="summary-row">
+              <span class="summary-label">extrabed {{ extraBeds }} × ฿{{ extraBedPerNight.toLocaleString() }} / คืน</span>
+              <span class="summary-value">฿{{ extraBedStayTotal.toLocaleString() }}</span>
             </div>
             <div class="summary-row">
               <span class="summary-label">ราคาห้อง / คืน</span>

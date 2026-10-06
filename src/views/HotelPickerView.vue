@@ -9,6 +9,7 @@ import { useNetworkBrandingStore } from '../stores/networkBranding'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import BookingPolicyNotes from '../components/BookingPolicyNotes.vue'
 import ReviewFormModal from '../components/ReviewFormModal.vue'
+import PartyPicker from '../components/PartyPicker.vue'
 import { apiMediaUrl } from '../utils/resolveUiImageUrl'
 import api from '../api/axios'
 
@@ -39,6 +40,7 @@ const checkIn = ref(today)
 const checkOut = ref(addDaysYmd(today, 1))
 const numAdults = ref(1)
 const numChildren = ref(0)
+const numRooms = ref(1)
 const province = ref('')
 const provinces = ref([])
 const searching = ref(false)
@@ -69,6 +71,7 @@ function stayQuery(extra = {}) {
     checkOut: checkOut.value,
     adults: String(numAdults.value),
     children: String(numChildren.value),
+    rooms: String(numRooms.value),
     ...extra,
   }
   if (province.value) q.province = province.value
@@ -99,9 +102,11 @@ function applyQueryFromRoute() {
   const qOut = String(q.checkOut || q.check_out || '').slice(0, 10)
   const qAdults = parseInt(q.adults, 10)
   const qChildren = parseInt(q.children, 10)
+  const qRooms = parseInt(q.rooms, 10)
   if (qIn && qIn >= today) checkIn.value = qIn
   if (qOut && qOut > checkIn.value) checkOut.value = qOut
-  if (Number.isFinite(qAdults) && qAdults >= 1) numAdults.value = qAdults
+  if (Number.isFinite(qRooms) && qRooms >= 1) numRooms.value = Math.min(10, qRooms)
+  if (Number.isFinite(qAdults) && qAdults >= 1) numAdults.value = Math.max(numRooms.value, qAdults)
   if (Number.isFinite(qChildren) && qChildren >= 0) numChildren.value = qChildren
   const qProvince = String(q.province || '').trim()
   if (qProvince) province.value = qProvince
@@ -246,6 +251,7 @@ async function searchHotels() {
         checkOut: checkOut.value,
         adults: numAdults.value,
         children: numChildren.value,
+        rooms: numRooms.value,
         ...(province.value ? { province: province.value } : {}),
       },
     })
@@ -411,16 +417,7 @@ onUnmounted(() => {
             <label class="form-label">เช็คเอาต์</label>
             <input v-model="checkOut" type="date" class="form-input" :min="minCheckOut" />
           </div>
-          <div class="form-row-inline">
-            <div class="form-row">
-              <label class="form-label">ผู้ใหญ่</label>
-              <input v-model.number="numAdults" type="number" class="form-input" min="1" max="10" />
-            </div>
-            <div class="form-row">
-              <label class="form-label">เด็ก</label>
-              <input v-model.number="numChildren" type="number" class="form-input" min="0" max="10" />
-            </div>
-          </div>
+          <PartyPicker v-model:adults="numAdults" v-model:children="numChildren" v-model:rooms="numRooms" />
           <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
           <button type="button" class="btn btn-primary network-search-btn" :disabled="searching" @click="searchHotels">
             <i class="ti ti-search"></i>
@@ -442,7 +439,7 @@ onUnmounted(() => {
         <span class="search-sticky-text">
           {{ formatDateShort(checkIn) }} → {{ formatDateShort(checkOut) }}
           <template v-if="province"> · {{ province }}</template>
-          · ผู้ใหญ่ {{ numAdults }} · เด็ก {{ numChildren }}
+          · ผู้ใหญ่ {{ numAdults }} · {{ numRooms }} ห้อง
           <template v-if="nights > 0"> · {{ nights }} คืน</template>
         </span>
       </span>

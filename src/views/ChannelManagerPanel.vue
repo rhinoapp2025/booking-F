@@ -52,6 +52,7 @@ const selectedTypeId = ref('')
 const selectedPlanId = ref('')
 const newPlanName = ref('')
 const newPlanIncludesBreakfast = ref(false)
+const newPlanIncludesExtrabed = ref(false)
 const showBulkForm = ref(false)
 const showStopForm = ref(false)
 const showDisplayForm = ref(false)
@@ -63,6 +64,7 @@ const bulk = reactive({
   weekdays: [0, 1, 2, 3, 4, 5, 6],
   price: '',
   abf: '',
+  extrabed: '',
   date_from: localYmd(),
   date_to: addDaysLocal(localYmd(), 13),
 })
@@ -526,9 +528,11 @@ async function createPlan() {
     const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/rate-plans`, {
       name: newPlanName.value.trim(),
       includes_breakfast: newPlanIncludesBreakfast.value,
+      includes_extrabed: newPlanIncludesExtrabed.value,
     })
     newPlanName.value = ''
     newPlanIncludesBreakfast.value = false
+    newPlanIncludesExtrabed.value = false
     if (data?.id) selectedPlanId.value = data.id
     formMessage.value = 'สร้างเรทแพลนแล้ว เลือกใช้ได้ทุกประเภทห้อง'
     await loadCalendar()
@@ -615,6 +619,46 @@ async function saveAbfCell(type, plan, ymd, value) {
   }
 }
 
+async function saveExtrabedCell(type, plan, ymd, value) {
+  selectPlan(type, plan)
+  const raw = String(value ?? '').trim()
+  try {
+    await api.put(`/api/admin/${hotelSlug.value}/channel/rates`, {
+      room_type_id: type.id,
+      rate_plan_id: plan.id,
+      date_from: ymd,
+      date_to: ymd,
+      weekdays: [0, 1, 2, 3, 4, 5, 6],
+      extrabed: raw === '' ? null : raw,
+    })
+    if (!plan.extrabed) plan.extrabed = {}
+    if (raw === '') delete plan.extrabed[ymd]
+    else plan.extrabed[ymd] = Number(raw)
+  } catch (err) {
+    errorMsg.value = err?.response?.data?.error || 'บันทึกราคา extrabed ไม่สำเร็จ'
+  }
+}
+
+async function toggleIncludesExtrabed(includes) {
+  if (!selectedPlanId.value) {
+    formError.value = 'เลือกเรทแพลนก่อน'
+    return
+  }
+  saving.value = true
+  formError.value = ''
+  try {
+    await api.patch(`/api/admin/${hotelSlug.value}/channel/rate-plans/${selectedPlanId.value}`, {
+      includes_extrabed: includes,
+    })
+    formMessage.value = includes ? 'เรทแพลนนี้มี extrabed' : 'เรทแพลนนี้ไม่มี extrabed'
+    await loadCalendar()
+  } catch (err) {
+    formError.value = err?.response?.data?.error || 'บันทึก extrabed ไม่สำเร็จ'
+  } finally {
+    saving.value = false
+  }
+}
+
 async function toggleIncludesBreakfast(includes) {
   if (!selectedPlanId.value) {
     formError.value = 'เลือกเรทแพลนก่อน'
@@ -640,7 +684,7 @@ async function applyBulk(kind) {
     formError.value = 'เลือกประเภทห้องก่อน'
     return
   }
-  if ((kind === 'price' || kind === 'abf') && !selectedPlanId.value) {
+  if ((kind === 'price' || kind === 'abf' || kind === 'extrabed') && !selectedPlanId.value) {
     formError.value = 'เลือกเรทแพลนก่อนอัปเดตราคา'
     return
   }
@@ -648,12 +692,26 @@ async function applyBulk(kind) {
     formError.value = 'เรทแพลนนี้ยังไม่เปิดอาหารเช้า'
     return
   }
+  if (kind === 'extrabed' && !selectedPlan.value?.includes_extrabed) {
+    formError.value = 'เรทแพลนนี้ยังไม่เปิด extrabed'
+    return
+  }
   saving.value = true
   formError.value = ''
   formMessage.value = ''
   try {
-    if (kind === 'price' || kind === 'abf') await ensurePlanLinked()
-    if (kind === 'abf') {
+    if (kind === 'price' || kind === 'abf' || kind === 'extrabed') await ensurePlanLinked()
+    if (kind === 'extrabed') {
+      await api.put(`/api/admin/${hotelSlug.value}/channel/rates`, {
+        room_type_id: selectedTypeId.value,
+        rate_plan_id: selectedPlanId.value,
+        date_from: bulk.date_from,
+        date_to: bulk.date_to,
+        weekdays: bulk.weekdays,
+        extrabed: bulk.extrabed === '' ? null : bulk.extrabed,
+      })
+      formMessage.value = 'อัปเดตราคา extrabed แล้ว'
+    } else if (kind === 'abf') {
       await api.put(`/api/admin/${hotelSlug.value}/channel/rates`, {
         room_type_id: selectedTypeId.value,
         rate_plan_id: selectedPlanId.value,
@@ -843,6 +901,7 @@ onUnmounted(() => {
                         </button>
                         {{ plan.name }}
                         <span v-if="plan.includes_breakfast" class="cm-abf-tag">อาหารเช้า</span>
+                        <span v-if="plan.includes_extrabed" class="cm-abf-tag">extrabed</span>
                       </th>
                       <td v-for="d in calendar.dates" :key="'ph-'+plan.id+d" :class="{ 'cm-stopped': plan.stop_sale?.[d] }">
                         <span v-if="plan.stop_sale?.[d]" class="cm-stop-badge">หยุด</span>
@@ -890,6 +949,28 @@ onUnmounted(() => {
                           :value="plan.abf?.[d] ?? ''"
                           @click.stop
                           @change="saveAbfCell(type, plan, d, $event.target.value)"
+                        />
+                      </td>
+                    </tr>
+                    <tr
+                      v-if="expandedPlans[planKey(type, plan)] && plan.includes_extrabed"
+                      class="cm-abf-row"
+                      :class="{ selected: type.id === selectedTypeId && plan.id === selectedPlanId }"
+                      @click="selectPlan(type, plan)"
+                    >
+                      <th class="sticky indent2">extrabed / เตียง</th>
+                      <td
+                        v-for="d in calendar.dates"
+                        :key="'xb-'+plan.id+d"
+                        :class="{ 'cm-stopped': plan.stop_sale?.[d] }"
+                      >
+                        <input
+                          class="cm-cell"
+                          type="number"
+                          min="0"
+                          :value="plan.extrabed?.[d] ?? ''"
+                          @click.stop
+                          @change="saveExtrabedCell(type, plan, d, $event.target.value)"
                         />
                       </td>
                     </tr>
@@ -1229,6 +1310,10 @@ onUnmounted(() => {
               <input v-model="newPlanIncludesBreakfast" type="checkbox" />
               มีอาหารเช้า
             </label>
+            <label class="cm-check">
+              <input v-model="newPlanIncludesExtrabed" type="checkbox" />
+              มี extrabed
+            </label>
             <p v-if="hotelPlans.length" class="muted">มีอยู่แล้ว: {{ hotelPlans.map((p) => p.name).join(', ') }}</p>
             <button class="btn btn-primary" type="button" :disabled="saving || !newPlanName.trim()" @click="createPlan">สร้าง</button>
           </template>
@@ -1326,6 +1411,25 @@ onUnmounted(() => {
               >ไม่มีอาหารเช้า</button>
             </div>
           </div>
+          <div v-if="selectedPlan" class="cm-row">
+            <label class="form-label">extrabed ของเรทแพลนนี้</label>
+            <div class="cm-weekdays">
+              <button
+                type="button"
+                class="cm-day-btn cm-abf-choice"
+                :class="{ active: selectedPlan.includes_extrabed }"
+                :disabled="saving"
+                @click="toggleIncludesExtrabed(true)"
+              >มี extrabed</button>
+              <button
+                type="button"
+                class="cm-day-btn cm-abf-choice"
+                :class="{ active: !selectedPlan.includes_extrabed }"
+                :disabled="saving"
+                @click="toggleIncludesExtrabed(false)"
+              >ไม่มี extrabed</button>
+            </div>
+          </div>
           <div class="cm-bulk-grid">
             <div class="cm-row">
               <label class="form-label">ตั้งแต่</label>
@@ -1356,6 +1460,11 @@ onUnmounted(() => {
               <label class="form-label">ราคาอาหารเช้า / คน / คืน</label>
               <input v-model="bulk.abf" class="form-input" type="number" min="0" placeholder="ว่าง = ลบค่า" />
               <button class="btn btn-outline" type="button" :disabled="saving" @click="applyBulk('abf')">อัปเดตอาหารเช้า</button>
+            </div>
+            <div v-if="selectedPlan?.includes_extrabed" class="cm-row">
+              <label class="form-label">ราคา extrabed / เตียง / คืน</label>
+              <input v-model="bulk.extrabed" class="form-input" type="number" min="0" placeholder="ว่าง = ลบค่า" />
+              <button class="btn btn-outline" type="button" :disabled="saving" @click="applyBulk('extrabed')">อัปเดต extrabed</button>
             </div>
             </div>
           </template>

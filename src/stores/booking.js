@@ -49,12 +49,12 @@ export const useBookingStore = defineStore('booking', {
     },
 
     // ─── ดึงประเภทห้องที่ว่างในช่วงวันที่ ─────────────────────────────────
-    async fetchAvailableRooms(hotelSlug, { checkIn, checkOut, adults = 1, children = 0 }) {
+    async fetchAvailableRooms(hotelSlug, { checkIn, checkOut, adults = 1, children = 0, rooms = 1 }) {
       this.loading = true
       this.error   = ''
       try {
         const { data } = await api.get(`/api/hotels/${hotelSlug}/available-rooms`, {
-          params: { check_in: checkIn, check_out: checkOut, adults, children },
+          params: { check_in: checkIn, check_out: checkOut, adults, children, rooms },
         })
         this.availableRooms = data || []
         return this.availableRooms
