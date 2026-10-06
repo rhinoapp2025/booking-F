@@ -679,6 +679,7 @@ onUnmounted(() => {
           <div class="room-header">
             <h3 class="room-name">{{ room.name }}</h3>
           </div>
+          <p v-if="Number(room.rooms_needed) > 1" class="room-view">ผู้เข้าพักนี้ใช้ {{ room.rooms_needed }} ห้อง</p>
           <p v-if="viewLabel(room)" class="room-view"><i class="ti ti-eye"></i> {{ viewLabel(room) }}</p>
           <p v-if="room.description" class="room-desc">{{ room.description }}</p>
           <div v-if="room.size_sqm" class="room-details">
