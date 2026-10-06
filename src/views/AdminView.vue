@@ -1323,7 +1323,31 @@ async function deleteBooking(booking) {
     await loadBookings()
     await showPmsResult(data?.pms, 'ลบการจองแล้ว')
   } catch (err) {
-    Swal.fire({ title: 'ลบไม่สำเร็จ', text: err?.response?.data?.error, icon: 'error' })
+    const message = err?.response?.data?.error || 'ลบไม่สำเร็จ'
+    const missing = Boolean(err?.response?.data?.pms_missing)
+    if (!missing) {
+      Swal.fire({ title: 'ลบไม่สำเร็จ', text: message, icon: 'error' })
+      return
+    }
+    const again = await Swal.fire({
+      title: 'ลบไม่สำเร็จ',
+      text: message,
+      icon: 'error',
+      showCancelButton: true,
+      confirmButtonText: 'ลบแค่ใน BookEng',
+      cancelButtonText: 'ปิด',
+      confirmButtonColor: '#c0392b',
+    })
+    if (!again.isConfirmed) return
+    try {
+      await api.delete(`/api/admin/${hotelSlug.value}/bookings/${booking.id}`, {
+        params: { bookeng_only: '1' },
+      })
+      await loadBookings()
+      Swal.fire({ title: 'ลบใน BookEng แล้ว', icon: 'success', timer: 1600, showConfirmButton: false })
+    } catch (err2) {
+      Swal.fire({ title: 'ลบไม่สำเร็จ', text: err2?.response?.data?.error || 'ลบไม่สำเร็จ', icon: 'error' })
+    }
   }
 }
 
