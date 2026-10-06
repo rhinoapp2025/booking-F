@@ -436,32 +436,6 @@ async function confirmBooking() {
       guest_address3:  guestAddress3.value.trim() || undefined,
       guest_name:      [guestTitle.value, guestFirstName.value.trim(), guestLastName.value.trim()].filter(Boolean).join(' '),
     }
-    if (needsSlipBeforeBook.value) {
-      sessionStorage.setItem(`booking-checkout:${hotelSlug.value}`, JSON.stringify({
-        hotelSlug: hotelSlug.value,
-        payload,
-        summary: {
-          roomName: selectedRoomType.value?.name || '',
-          planName: selectedPlan.value?.name || '',
-          checkIn: checkIn.value,
-          checkOut: checkOut.value,
-          nights: nights.value,
-          roomTotal: roomStayTotal.value,
-          breakfastTotal: breakfastStayTotal.value,
-          subtotal: staySubtotal.value,
-          serviceCharge: stayCharges.value.service_charge,
-          servicePercent: stayCharges.value.service_charge_percent,
-          vat: stayCharges.value.vat,
-          vatPercent: stayCharges.value.vat_percent,
-          total: stayTotal.value,
-          deposit: paymentDue.value,
-          collectFull: bookingStore.collectFull,
-        },
-      }))
-      showModal.value = false
-      router.push(`/${hotelSlug.value}/payment/checkout`)
-      return
-    }
     const booking = await bookingStore.createBooking(hotelSlug.value, payload)
     auth.fetchMe().catch(() => null)
   showModal.value = false
