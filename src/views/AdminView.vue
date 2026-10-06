@@ -1854,7 +1854,6 @@ async function shareHotelLink() {
     <div
       v-if="showTypeModal"
       class="ci-backdrop rt-backdrop"
-      @click.self="cancelEditType"
     >
       <div class="ci-sheet rt-sheet" role="dialog" aria-modal="true" aria-labelledby="local-type-title">
         <div class="ci-sheet-head">
@@ -1933,7 +1932,6 @@ async function shareHotelLink() {
     <div
       v-if="showRoomModal"
       class="ci-backdrop rt-backdrop"
-      @click.self="cancelEditRoom"
     >
       <div class="ci-sheet rt-sheet rt-sheet--sm" role="dialog" aria-modal="true" aria-labelledby="local-room-title">
         <div class="ci-sheet-head">
@@ -2144,7 +2142,6 @@ async function shareHotelLink() {
     <div
       v-if="showRoomTypeManager"
       class="ci-backdrop rt-backdrop"
-      @click.self="closeRoomTypeManager"
     >
       <div class="ci-sheet rt-sheet" role="dialog" aria-modal="true" aria-labelledby="rt-title">
         <div class="ci-sheet-head">
@@ -2232,7 +2229,6 @@ async function shareHotelLink() {
     <div
       v-if="checkInReview"
       class="ci-backdrop"
-      @click.self="closeCheckInReview"
     >
       <div class="ci-sheet" role="dialog" aria-modal="true" aria-labelledby="ci-title">
         <div class="ci-sheet-head">
@@ -2349,7 +2345,6 @@ async function shareHotelLink() {
     <div
       v-if="walkInOpen"
       class="ci-backdrop"
-      @click.self="closeWalkIn"
     >
       <div class="ci-sheet" role="dialog" aria-modal="true" aria-labelledby="walkin-title">
         <div class="ci-sheet-head">
@@ -2477,7 +2472,6 @@ async function shareHotelLink() {
         role="dialog"
         aria-modal="true"
         aria-label="สลิปการชำระ"
-        @click.self="closeSlipLightbox"
       >
         <button type="button" class="slip-lightbox-close icon-btn" aria-label="ปิด" @click="closeSlipLightbox">
           <i class="ti ti-x"></i>

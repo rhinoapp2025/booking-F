@@ -105,7 +105,7 @@ async function submit() {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="review-backdrop" @click.self="close">
+    <div v-if="open" class="review-backdrop">
       <div class="review-sheet" role="dialog" aria-modal="true" aria-label="เขียนรีวิว">
         <div class="review-head">
           <h2 class="review-title">รีวิวการเข้าพัก</h2>

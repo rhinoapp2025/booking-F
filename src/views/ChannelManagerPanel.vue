@@ -1000,7 +1000,6 @@ onUnmounted(() => {
     <div
       v-if="showDisplayForm"
       class="cm-backdrop"
-      @click.self="closeDisplayForm"
     >
       <div class="cm-sheet cm-sheet-center" role="dialog" aria-modal="true" aria-labelledby="cm-display-title">
         <div class="cm-sheet-head">
@@ -1157,7 +1156,6 @@ onUnmounted(() => {
     <div
       v-if="showStopForm"
       class="cm-backdrop"
-      @click.self="closeStopForm"
     >
       <div class="cm-sheet" role="dialog" aria-modal="true" aria-labelledby="cm-stop-title">
         <div class="cm-sheet-head">
@@ -1270,7 +1268,6 @@ onUnmounted(() => {
     <div
       v-if="showBulkForm"
       class="cm-backdrop"
-      @click.self="closeBulkForm"
     >
       <div class="cm-sheet" role="dialog" aria-modal="true" aria-labelledby="cm-form-title">
         <div class="cm-sheet-head">

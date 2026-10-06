@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { ref } from 'vue'
 
 const adults = defineModel('adults', { type: Number, default: 1 })
 const children = defineModel('children', { type: Number, default: 0 })
@@ -8,7 +8,6 @@ const rooms = defineModel('rooms', { type: Number, default: 1 })
 const MAX_ROOMS = 10
 const MAX_GUESTS = 30
 const open = ref(false)
-const root = ref(null)
 
 function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -29,16 +28,10 @@ function changeChildren(delta) {
   children.value = clamp(Number(children.value) + delta, 0, MAX_GUESTS)
 }
 
-function onDocClick(e) {
-  if (!root.value?.contains(e.target)) open.value = false
-}
-
-onMounted(() => document.addEventListener('click', onDocClick))
-onUnmounted(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <template>
-  <div ref="root" class="party-picker">
+  <div class="party-picker">
     <button
       type="button"
       class="party-trigger"

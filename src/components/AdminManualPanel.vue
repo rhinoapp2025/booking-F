@@ -50,8 +50,8 @@ onUnmounted(() => {
           v-if="navOpen && isMobile"
           type="button"
           class="admin-manual-backdrop"
-          aria-label="ปิดหัวข้อคู่มือ"
-          @click="navOpen = false"
+          aria-hidden="true"
+          tabindex="-1"
         />
       </Transition>
 

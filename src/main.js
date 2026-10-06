@@ -1,10 +1,19 @@
 import { createApp } from 'vue'
 import '@tabler/icons-webfont/dist/tabler-icons.min.css'
+import Swal from 'sweetalert2'
 import './style.css'
 import App from './App.vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from './utils/dismissBlockingOverlays'
+
+const swalFire = Swal.fire.bind(Swal)
+Swal.fire = (...args) => {
+  if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+    return swalFire({ ...args[0], allowOutsideClick: false })
+  }
+  return swalFire(...args)
+}
 
 const app = createApp(App)
 

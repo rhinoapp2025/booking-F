@@ -386,7 +386,7 @@ onMounted(() => {
 
     <BottomNav active="profile" />
 
-    <div v-if="showCredModal" class="cred-backdrop" @click.self="closeCredModal">
+    <div v-if="showCredModal" class="cred-backdrop">
       <div class="cred-modal card" role="dialog" aria-modal="true" aria-labelledby="cred-title">
         <div class="cred-modal-head">
           <h2 id="cred-title" class="cred-title">แก้ไขไอดี / รหัสผ่าน</h2>

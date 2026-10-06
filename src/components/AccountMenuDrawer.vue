@@ -79,8 +79,8 @@ defineExpose({
         v-if="menuOpen"
         type="button"
         class="account-menu-backdrop"
-        aria-label="ปิดเมนู"
-        @click="closeMenu"
+        aria-hidden="true"
+        tabindex="-1"
       />
     </Transition>
 

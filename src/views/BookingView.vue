@@ -835,7 +835,7 @@ onUnmounted(() => {
     />
 
     <!-- Booking Confirm Modal -->
-    <div v-if="showModal" class="modal-backdrop" @click.self="showModal = false">
+    <div v-if="showModal" class="modal-backdrop">
       <div class="modal-sheet">
         <div class="modal-header">
           <h2 class="modal-title">{{ modalTitle }}</h2>
@@ -1109,7 +1109,6 @@ onUnmounted(() => {
         role="dialog"
         aria-modal="true"
         aria-label="ดูรูปห้องขยาย"
-        @click.self="closeLightbox"
         @touchstart.passive="onLightboxTouchStart"
         @touchend.passive="onLightboxTouchEnd"
       >

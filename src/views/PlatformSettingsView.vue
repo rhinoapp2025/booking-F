@@ -872,7 +872,6 @@ onUnmounted(() => {
     <div
       v-if="showCatalogModal"
       class="catalog-backdrop"
-      @click.self="closeCatalogModal"
     >
       <div class="catalog-sheet" role="dialog" aria-modal="true" aria-labelledby="catalog-modal-title">
         <div class="catalog-sheet-head">
