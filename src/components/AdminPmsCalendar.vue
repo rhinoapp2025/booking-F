@@ -32,6 +32,8 @@ const paymentForm = ref({ trnCode: '', amount: 0, company: '', remark: '' })
 // แผงด้านขวา: summary = รายละเอียด, checkin = ขั้นเช็คอิน, folio = ขั้นเช็คเอาต์
 const panel = ref('summary')
 const folioTab = ref('charge')
+// 0 = Posting, 1 = Rebate ตรงกับแคชเชียร์ PMS (TrnCredit)
+const postKind = ref('0')
 const checkin = ref(null)
 const checkinLoading = ref(false)
 const checkinError = ref('')
@@ -641,8 +643,26 @@ function userId() {
   return String(auth.user?.username || auth.user?.name || auth.user?.id || 'webadmin').slice(0, 20)
 }
 
+const postItems = computed(() => {
+  if (!folio.value) return []
+  return postKind.value === '1' ? (folio.value.rebates || []) : (folio.value.charges || [])
+})
+
+function pickPostItem(list) {
+  const first = list?.[0]
+  chargeForm.value.trnCode = first?.code || ''
+  chargeForm.value.amount = Number(first?.price) || 0
+  chargeForm.value.quantity = 1
+}
+
+function setPostKind(kind) {
+  postKind.value = String(kind)
+  const list = String(kind) === '1' ? (folio.value?.rebates || []) : (folio.value?.charges || [])
+  pickPostItem(list)
+}
+
 function syncChargeAmount() {
-  const item = folio.value?.charges?.find((row) => row.code === chargeForm.value.trnCode)
+  const item = postItems.value.find((row) => row.code === chargeForm.value.trnCode)
   const price = Number(item?.price) || 0
   if (price > 0) chargeForm.value.amount = Math.round(price * (Number(chargeForm.value.quantity) || 1) * 100) / 100
 }
@@ -655,6 +675,7 @@ async function openCheckout() {
   folioLoading.value = true
   folio.value = null
   folioTab.value = 'charge'
+  postKind.value = '0'
   panel.value = 'folio'
   try {
     const { data: body } = await api.get(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/folio`, {
@@ -703,7 +724,7 @@ async function postCharge() {
     chargeForm.value.remark = ''
     applyFolio(body)
   } catch (err) {
-    Swal.fire({ icon: 'error', title: 'โพสต์ค่าห้องไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
+    Swal.fire({ icon: 'error', title: postKind.value === '1' ? 'โพสต์รีเบทไม่สำเร็จ' : 'โพสต์รายการไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
   } finally {
     saving.value = false
   }
@@ -1178,25 +1199,31 @@ watch(() => props.hotelSlug, () => {
 
                 <section class="card">
                   <div class="tabs" role="tablist">
-                    <button type="button" role="tab" :aria-selected="folioTab === 'charge'" :class="{ on: folioTab === 'charge' }" @click="folioTab = 'charge'">โพสต์ค่าใช้จ่าย</button>
+                    <button type="button" role="tab" :aria-selected="folioTab === 'charge'" :class="{ on: folioTab === 'charge' }" @click="folioTab = 'charge'">โพสต์ / รีเบท</button>
                     <button type="button" role="tab" :aria-selected="folioTab === 'payment'" :class="{ on: folioTab === 'payment' }" @click="folioTab = 'payment'">รับชำระ</button>
                   </div>
                   <form v-if="folioTab === 'charge'" class="fields" @submit.prevent="postCharge">
+                    <div class="kind-toggle" role="radiogroup" aria-label="ประเภทโพสต์">
+                      <button type="button" role="radio" :aria-checked="postKind === '0'" :class="{ on: postKind === '0' }" @click="setPostKind('0')">Posting</button>
+                      <button type="button" role="radio" :aria-checked="postKind === '1'" :class="{ on: postKind === '1' }" @click="setPostKind('1')">Rebate</button>
+                    </div>
                     <label class="wide">
-                      <span>รายการ</span>
+                      <span>{{ postKind === '1' ? 'รายการรีเบท' : 'รายการโพสต์' }}</span>
                       <select v-model="chargeForm.trnCode" required @change="syncChargeAmount">
-                        <option v-for="item in folio.charges" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
+                        <option v-if="!postItems.length" value="" disabled>ไม่มีรายการ</option>
+                        <option v-for="item in postItems" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
                       </select>
                     </label>
                     <label><span>จำนวน</span><input v-model.number="chargeForm.quantity" type="number" min="1" required inputmode="numeric" @change="syncChargeAmount"></label>
                     <label><span>จำนวนเงิน (บาท)</span><input v-model.number="chargeForm.amount" type="number" min="0" step="0.01" required inputmode="decimal"></label>
                     <label class="wide"><span>หมายเหตุ</span><input v-model="chargeForm.remark" maxlength="50"></label>
-                    <button type="submit" class="btn wide" :disabled="saving">โพสต์รายการ</button>
+                    <button type="submit" class="btn wide" :disabled="saving || !postItems.length">{{ postKind === '1' ? 'โพสต์รีเบท' : 'โพสต์รายการ' }}</button>
                   </form>
                   <form v-else class="fields" @submit.prevent="postPayment">
                     <label class="wide">
                       <span>วิธีชำระ</span>
                       <select v-model="paymentForm.trnCode" required>
+                        <option v-if="!folio.payments?.length" value="" disabled>ไม่มีวิธีชำระ</option>
                         <option v-for="item in folio.payments" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
                       </select>
                     </label>
@@ -1414,6 +1441,9 @@ td.stay.drop-bad .bar { box-shadow: 0 0 0 2px #c62828; }
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: #eef2f7; }
 .tabs button { height: 36px; border: 0; border-radius: 9px; background: transparent; color: #44566c; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .tabs button.on { background: #fff; color: #142033; box-shadow: 0 1px 3px rgba(0, 21, 41, .14); }
+.kind-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; grid-column: 1 / -1; padding: 3px; border-radius: 10px; background: #f4f7fb; border: 1px solid #e1e8f2; }
+.kind-toggle button { height: 34px; border: 0; border-radius: 8px; background: transparent; color: #44566c; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.kind-toggle button.on { background: #fff; color: #142033; box-shadow: 0 1px 2px rgba(0, 21, 41, .12); }
 .btn { height: 44px; padding: 0 18px; border: 1px solid #001529; border-radius: 11px; background: #001529; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn.ghost { background: #fff; color: #142033; border-color: #cfdbe9; }
 .btn:disabled, .icon-btn:disabled { opacity: .45; cursor: not-allowed; }
