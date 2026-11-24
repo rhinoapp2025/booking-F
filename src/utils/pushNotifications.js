@@ -369,8 +369,8 @@ export async function showOsNotificationFromPayload(payload) {
   if (isAlreadyViewing(url, payload)) return
   const options = {
     body,
-    icon: '/favicon.svg',
-    badge: '/favicon.svg',
+    icon: '/favicon.png',
+    badge: '/favicon.png',
     tag: buildNotificationTag(payload),
     renotify: false,
     data: { url },

@@ -23,7 +23,7 @@ self.addEventListener('activate', (event) => {
 firebase.initializeApp(${JSON.stringify(config)});
 
 const messaging = firebase.messaging();
-const iconUrl = self.location.origin + '/favicon.svg';
+const iconUrl = self.location.origin + '/favicon.png';
 
 function buildNotificationOptions(payload) {
   const title = payload.notification?.title || payload.data?.title || 'แจ้งเตือน';

@@ -7,7 +7,8 @@ import { useUiSettingsStore } from './stores/uiSettings'
 import { useNetworkBrandingStore } from './stores/networkBranding'
 import AppUpdateBanner from './components/AppUpdateBanner.vue'
 import { useAppUpdate } from './composables/useAppUpdate'
-import { syncBrowserTitle } from './utils/pageMeta'
+import { applyPageMeta } from './utils/pageMeta'
+import { apiMediaUrl } from './utils/resolveUiImageUrl'
 import {
   initPushNotificationsWhenReady,
 } from './utils/pushNotifications'
@@ -54,8 +55,32 @@ watch(
 )
 
 watch(
-  () => (isNetworkSearch.value ? networkBranding.name : hotelStore.hotel?.name),
-  (name) => syncBrowserTitle(name),
+  () => [
+    route.path,
+    hotelStore.hotel?.name,
+    hotelStore.hotel?.logo_url,
+    hotelStore.hotel?.description,
+  ],
+  () => {
+    const icon = `${window.location.origin}/favicon.png`
+    if (route.path === '/') {
+      applyPageMeta({
+        title: 'theotel',
+        description: 'จองห้องพักออนไลน์กับ theotel',
+        image: icon,
+        url: window.location.href,
+      })
+      return
+    }
+    const hotel = hotelStore.hotel
+    const name = String(hotel?.name || '').trim()
+    applyPageMeta({
+      title: name || 'theotel',
+      description: String(hotel?.description || '').trim() || (name ? `จองห้องพัก ${name}` : 'จองห้องพักออนไลน์กับ theotel'),
+      image: apiMediaUrl(hotel?.logo_url) || icon,
+      url: window.location.href,
+    })
+  },
   { immediate: true }
 )
 

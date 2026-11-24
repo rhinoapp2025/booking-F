@@ -71,7 +71,7 @@ export const useUiSettingsStore = defineStore('uiSettings', {
         ui_hero_image_url: branding?.hero_url || '',
       }
       this.loadedForSlug = ''
-      applyTheme(this.settings, '', name)
+      applyTheme(this.settings, '', 'theotel')
       return this.settings
     },
     applyLocal(partial) {

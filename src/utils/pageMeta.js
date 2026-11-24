@@ -9,13 +9,14 @@ function upsertMeta(attr, key, content) {
   el.setAttribute('content', content)
 }
 
-const DEFAULT_TITLE = 'จองห้องพัก'
+const DEFAULT_TITLE = 'theotel'
 
 export function applyPageMeta({ title, description, image, url } = {}) {
   if (title) document.title = title
   if (description) upsertMeta('name', 'description', description)
   if (title) upsertMeta('property', 'og:title', title)
   if (description) upsertMeta('property', 'og:description', description)
+  upsertMeta('property', 'og:site_name', 'theotel')
   upsertMeta('property', 'og:type', 'website')
   if (url) upsertMeta('property', 'og:url', url)
   if (image) upsertMeta('property', 'og:image', image)
