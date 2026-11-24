@@ -754,9 +754,6 @@ onUnmounted(() => {
             <div v-else-if="!(room.rate_plans || []).length && room.breakfast_available" class="room-abf">
               อาหารเช้าได้ ฿{{ Number(room.abf_per_person_per_night || 0).toLocaleString() }} / คน / คืน
             </div>
-            <div class="room-total" v-if="nights > 1">
-              ห้อง ฿{{ (Number(room.price_per_night) * nights).toLocaleString() }} / {{ nights }} คืน
-            </div>
               </div>
           <button class="btn btn-primary room-btn" @click="openBookingModal(room)">
             จองห้องนี้
