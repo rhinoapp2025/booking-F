@@ -66,7 +66,7 @@ async function filePayload(file) {
 }
 
 async function videoPayload(file) {
-  if (file.size > 12 * 1024 * 1024) throw new Error('วิดีโอใหญ่เกิน 12MB')
+  if (file.size > 100 * 1024 * 1024) throw new Error('วิดีโอใหญ่เกิน 100MB')
   const dataUrl = await readAsDataUrl(file)
   const base64 = dataUrl.split(',')[1] || ''
   const mime = /^video\/(mp4|webm)$/i.test(file.type)

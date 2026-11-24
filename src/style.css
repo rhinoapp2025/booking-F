@@ -121,17 +121,26 @@ html {
   overscroll-behavior-y: none;
 }
 
-html.booking-site-open,
+html.booking-site-open {
+  position: relative;
+  inset: auto;
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  background: var(--bg, #f4f1ea);
+  color: var(--ink, #1a2332);
+}
 html.booking-site-open body,
 html.booking-site-open #app {
   position: relative;
   inset: auto;
   height: auto;
   min-height: 100%;
-  overflow: auto;
-  overscroll-behavior: auto;
-  background: var(--bg, #f4f1ea);
-  color: var(--ink, #1a2332);
+  overflow: visible;
+  background: transparent;
+  color: inherit;
 }
 
 body {
@@ -293,6 +302,7 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  container-type: inline-size;
 }
 .search-hero.has-photo .search-hero-front {
   margin-top: -92px;

@@ -474,8 +474,8 @@ onMounted(async () => {
               <span v-if="gal.key === tab + i + f[0]" class="gal"><em v-if="!gal.files.length">ยังไม่มีรูปในโฟลเดอร์นี้</em><img v-for="u in gal.files" :key="u" :src="img(u)" alt="" @click="choose(o, f[0], u)"></span>
             </span>
             <span v-else-if="f[2] === 'video'" class="img">
-              <video v-if="o[f[0]] && !/youtu(\.be|be\.com)/i.test(o[f[0]])" :src="img(o[f[0]])" muted playsinline controls></video>
-              <small class="hint">ไฟล์ไม่เกิน 12MB หรือวางลิงก์ mp4, webm, YouTube</small>
+              <video v-if="o[f[0]] && !/youtu(\.be|be\.com)/i.test(o[f[0]])" :src="img(o[f[0]])" playsinline controls></video>
+              <small class="hint">ไฟล์ไม่เกิน 100MB หรือวางลิงก์ mp4, webm, YouTube — เล่นมีเสียง</small>
               <input type="file" accept="video/mp4,video/webm,.mp4,.webm" @change="pick(o, f[0], $event)">
               <input v-model="o[f[0]]" placeholder="หรือวางลิงก์วิดีโอ">
             </span>

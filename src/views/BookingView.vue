@@ -672,7 +672,7 @@ onUnmounted(() => {
           <p v-if="nights > 0" class="nights-label">{{ nights }} คืน</p>
           <button class="btn btn-primary search-btn" :disabled="bookingStore.loading" @click="searchRooms">
             <i class="ti ti-search"></i>
-            {{ bookingStore.loading ? 'กำลังค้นหา...' : 'ค้นหาห้องว่าง' }}
+            <span class="search-btn-label">{{ bookingStore.loading ? 'กำลังค้นหา...' : 'ค้นหาห้องว่าง' }}</span>
           </button>
         </div>
       </div>
@@ -1202,15 +1202,17 @@ onUnmounted(() => {
   box-shadow: var(--shadow-sm);
 }
 .booking-section { padding: 0 var(--page-padding-x); display: flex; flex-direction: column; gap: var(--space-4); }
-.search-form { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
-.form-row    { display: flex; flex-direction: column; gap: var(--space-1); }
+.search-form { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.search-form > * { min-width: 0; max-width: 100%; }
+.form-row    { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .form-row-inline { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 .form-label  { font-size: var(--text-label); font-weight: 500; color: var(--color-text-secondary); }
 .muted-hint { font-weight: 400; color: var(--color-text-muted); }
 .req { color: var(--color-error, #c0392b); }
-.form-input  { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: inherit; font-size: var(--text-sm); background: var(--color-surface); }
+.form-input  { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: inherit; font-size: var(--text-sm); background: var(--color-surface); }
 .nights-label { font-size: var(--text-sm); color: var(--color-text-muted); text-align: center; }
-.search-btn  { width: 100%; }
+.search-btn  { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.search-btn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .search-sticky {
   position: fixed;
   top: 0;
@@ -1525,7 +1527,7 @@ onUnmounted(() => {
     max-width: none;
     width: 100%;
     display: grid;
-    grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(220px, 1.2fr) auto;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) minmax(0, 1.25fr) minmax(3rem, 0.85fr);
     align-items: end;
     gap: var(--space-3) var(--space-4);
   }
@@ -1543,11 +1545,20 @@ onUnmounted(() => {
     grid-column: 4;
     grid-row: 1;
     align-self: end;
-    width: auto;
-    min-width: 180px;
+    width: 100%;
+    min-width: 0;
     height: var(--btn-primary-height);
     min-height: var(--btn-primary-height);
-    white-space: nowrap;
+    padding-inline: clamp(8px, 1.2vw, 18px);
+    font-size: clamp(13px, 1.05vw, 15px);
+    overflow: hidden;
+  }
+  @container (max-width: 820px) {
+    .search-form {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr) 48px;
+    }
+    .search-btn-label { display: none; }
+    .search-form .search-btn { padding-inline: 0; }
   }
   .room-list,
   .my-booking-list {

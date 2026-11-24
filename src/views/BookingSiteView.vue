@@ -80,15 +80,21 @@ function slideVideo(slide) {
   if (!value || slide?.showVideo === false) return null
   const id = youtubeId(value)
   if (id) {
-    return { kind: 'youtube', src: `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&rel=0&playsinline=1&modestbranding=1` }
+    return { kind: 'youtube', src: `https://www.youtube.com/embed/${id}?autoplay=1&loop=1&playlist=${id}&controls=1&rel=0&playsinline=1&modestbranding=1&enablejsapi=1` }
   }
   return { kind: 'file', src: img(value) }
 }
 function syncSlideVideos() {
   document.querySelectorAll('.booking-site .slide-video').forEach((el) => {
     const active = el.closest('.slide')?.classList.contains('on')
+    el.muted = false
+    el.volume = 1
     if (active) el.play().catch(() => {})
     else el.pause()
+  })
+  document.querySelectorAll('.booking-site .slide-embed').forEach((frame) => {
+    frame.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
+    frame.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*')
   })
 }
 const showImg = o => o?.showImage !== false
@@ -170,15 +176,27 @@ const toggle = () => { paused.value = !paused.value; play() }
 const pick = i => { cur.value = i; paused.value = true; play() }
 watch(cur, () => nextTick(syncSlideVideos))
 
-function onMenuClick(section) {
+function scrollToId(id) {
+  const el = document.getElementById(id)
+  if (!el) return false
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  return true
+}
+
+function onMenuClick(section, event) {
   menuOpen.value = false
-  if (section !== 'book') return
+  if (section === 'book') return
+  const id = String(navHref(section) || '').replace(/^#/, '')
+  if (!id || !scrollToId(id)) return
+  event?.preventDefault()
+  const next = `#${id}`
+  if (location.hash !== next) history.pushState(null, '', next)
 }
 
 function scrollToHash() {
   const id = decodeURIComponent(String(location.hash || '').replace(/^#/, ''))
   if (!id) return
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  scrollToId(id)
 }
 
 function paint() {
@@ -192,6 +210,7 @@ watch(
   { deep: true },
 )
 
+let unlockSound = null
 onMounted(async () => {
   prevTitle = document.title
   try {
@@ -202,12 +221,19 @@ onMounted(async () => {
     play()
     await nextTick()
     scrollToHash()
+    unlockSound = () => {
+      syncSlideVideos()
+      window.removeEventListener('pointerdown', unlockSound)
+      unlockSound = null
+    }
+    window.addEventListener('pointerdown', unlockSound)
   } catch (err) {
     loadError.value = err?.response?.data?.error || err?.message || 'โหลดเว็บไซต์ไม่สำเร็จ'
   }
 })
 onUnmounted(() => {
   clearInterval(timer)
+  if (unlockSound) window.removeEventListener('pointerdown', unlockSound)
   clearTheme(rootEl.value || document.documentElement)
   if (prevTitle) document.title = prevTitle
 })
@@ -220,7 +246,7 @@ onUnmounted(() => {
   <div v-else-if="!c" class="booking-site-status">กำลังโหลดเว็บไซต์...</div>
   <div v-else class="booking-site" ref="rootEl">
     <header class="hero" :class="{ 'no-overlay': c.theme?.heroOverlay === false }" id="top">
-      <a class="logo" href="#top">{{ c.site.logoText }}<small v-if="c.site.logoSub">{{ c.site.logoSub }}</small></a>
+      <a class="logo" href="#top" @click="onMenuClick('top', $event)">{{ c.site.logoText }}<small v-if="c.site.logoSub">{{ c.site.logoSub }}</small></a>
       <button type="button" class="menu-toggle" :aria-expanded="menuOpen" aria-controls="booking-site-menu" @click="menuOpen = !menuOpen">{{ menuOpen ? '×' : '☰' }}</button>
       <nav id="booking-site-menu" class="menu" :class="{ open: menuOpen }" aria-label="เมนูหลัก">
         <a
@@ -230,7 +256,7 @@ onUnmounted(() => {
           :target="n.section === 'book' ? tg : undefined"
           :rel="n.section === 'book' ? 'noopener' : undefined"
           :class="{ bk: n.section === 'book' }"
-          @click="onMenuClick(n.section)"
+          @click="onMenuClick(n.section, $event)"
         >{{ n.label }}</a>
       </nav>
 
@@ -240,9 +266,9 @@ onUnmounted(() => {
           class="slide-video"
           :src="slideVideo(s).src"
           :poster="s.image ? img(s.image) : undefined"
-          muted
           loop
           playsinline
+          controls
           @loadeddata="syncSlideVideos"
         />
         <iframe

@@ -39,7 +39,9 @@ const hotelChildren = [
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior() {
+  scrollBehavior(to, _from, savedPosition) {
+    if (to.hash) return { el: to.hash, top: 0, behavior: 'smooth' }
+    if (savedPosition) return savedPosition
     return { left: 0, top: 0 }
   },
   routes: [
@@ -124,10 +126,11 @@ router.beforeEach(async (to) => {
   return true
 })
 
-router.afterEach(() => {
+router.afterEach((to, from) => {
   releaseAllBodyScrollLocks()
   dismissBlockingOverlays()
   scheduleOverlayCleanup()
+  if (to.path === from.path && to.hash) return
   window.scrollTo(0, 0)
 })
 
