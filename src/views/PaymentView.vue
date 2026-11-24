@@ -300,11 +300,11 @@ onUnmounted(() => {
             <span class="summary-label">อาหารเช้า</span>
             <span class="summary-value">฿{{ formatBaht(priceLines.breakfastTotal) }}</span>
           </div>
-          <div class="summary-row">
+          <div v-if="priceLines.servicePercent > 0" class="summary-row">
             <span class="summary-label">Service {{ priceLines.servicePercent }}%</span>
             <span class="summary-value">฿{{ formatBaht(priceLines.serviceCharge) }}</span>
           </div>
-          <div class="summary-row">
+          <div v-if="priceLines.vatPercent > 0" class="summary-row">
             <span class="summary-label">VAT {{ priceLines.vatPercent }}%</span>
             <span class="summary-value">฿{{ formatBaht(priceLines.vat) }}</span>
           </div>
