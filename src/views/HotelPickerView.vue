@@ -385,7 +385,7 @@ onUnmounted(() => {
       </header>
 
       <div class="network-hero-inner">
-        <h1 class="network-hero-title">{{ networkBranding.name }}</h1>
+        <h1 class="network-hero-title">theotel</h1>
         <div class="network-tabs" role="tablist" aria-label="หน้ารวม">
           <button
             type="button"

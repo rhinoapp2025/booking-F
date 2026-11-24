@@ -11,6 +11,16 @@ function upsertMeta(attr, key, content) {
 
 const DEFAULT_TITLE = 'theotel'
 
+export function tabTitle(hotelName = '', pathname = '') {
+  const path = pathname || (typeof window !== 'undefined' ? window.location.pathname : '/')
+  const onHome = path === '/' || path === ''
+  if (onHome) return DEFAULT_TITLE
+  const name = String(hotelName || '').trim()
+  if (name && name.toLowerCase() !== DEFAULT_TITLE) return name
+  const slug = path.split('/').filter(Boolean)[0] || ''
+  return slug || DEFAULT_TITLE
+}
+
 export function applyPageMeta({ title, description, image, url } = {}) {
   if (title) document.title = title
   if (description) upsertMeta('name', 'description', description)

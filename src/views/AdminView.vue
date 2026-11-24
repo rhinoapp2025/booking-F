@@ -22,6 +22,7 @@ const accountMenuRef = ref(null)
 const showRoomsTab = computed(() => features.showRoomsTab)
 const showKioskTab = computed(() => features.showKioskTab)
 const showSettingsTab = computed(() => features.showSettingsTab)
+const bookingSiteEnabled = computed(() => features.bookingSiteEnabled)
 const useKioskRooms = computed(() => showKioskTab.value && kioskConfig.value.kiosk_enabled === 'true')
 
 const tab         = ref('dashboard')
@@ -1438,6 +1439,8 @@ const guestHotelUrl = computed(() => {
   return `${origin}/${hotelSlug.value}`
 })
 
+const guestSiteUrl = computed(() => `${guestHotelUrl.value}/booking-site`)
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text)
@@ -1460,16 +1463,11 @@ async function copyText(text) {
   }
 }
 
-async function shareHotelLink() {
-  const url = guestHotelUrl.value
+async function shareLink(url, title, text) {
   const name = hotelStore.hotelName
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({
-        title: name,
-        text: `จองห้องพัก ${name}`,
-        url,
-      })
+      await navigator.share({ title: title || name, text, url })
       return
     } catch (err) {
       if (err?.name === 'AbortError') return
@@ -1477,16 +1475,21 @@ async function shareHotelLink() {
   }
   const copied = await copyText(url)
   if (copied) {
-    await Swal.fire({
-      title: 'คัดลอกลิงก์แล้ว',
-      text: url,
-      icon: 'success',
-      timer: 2200,
-      showConfirmButton: false,
-    })
+    await Swal.fire({ title: 'คัดลอกลิงก์แล้ว', text: url, icon: 'success', timer: 2200, showConfirmButton: false })
     return
   }
-  await Swal.fire({ title: 'ลิงก์โรงแรมนี้', text: url, icon: 'info' })
+  await Swal.fire({ title: title || 'ลิงก์', text: url, icon: 'info' })
+}
+
+async function shareHotelLink() {
+  const url = guestHotelUrl.value
+  const name = hotelStore.hotelName
+  await shareLink(url, name, `จองห้องพัก ${name}`)
+}
+
+async function shareSiteLink() {
+  const name = hotelStore.hotelName
+  await shareLink(guestSiteUrl.value, name, `เว็บไซต์ ${name}`)
 }
 </script>
 
@@ -1507,6 +1510,12 @@ async function shareHotelLink() {
     <div class="admin-links">
       <button type="button" class="admin-link" title="แชร์ลิงก์จองของโรงแรมนี้ให้ลูกค้า" @click="shareHotelLink">
         <i class="ti ti-share"></i> แชร์ลิงก์
+      </button>
+      <router-link v-if="bookingSiteEnabled" :to="hotelPath('/booking-site/admin')" class="admin-link">
+        <i class="ti ti-world"></i> แก้ไขเว็บไซต์
+      </router-link>
+      <button v-if="bookingSiteEnabled" type="button" class="admin-link" title="แชร์เว็บไซต์ของสาขานี้" @click="shareSiteLink">
+        <i class="ti ti-share"></i> แชร์เว็บไซต์
       </button>
       <router-link v-if="showSettingsTab" :to="hotelPath('/admin/config')" class="admin-link">
         <i class="ti ti-building-cog"></i> ตั้งค่าโรงแรม

@@ -7,6 +7,7 @@ import { useUiSettingsStore } from '../stores/uiSettings'
 import api from '../api/axios'
 import { compressImage } from '../utils/compressChatImage'
 import { apiMediaUrl } from '../utils/resolveUiImageUrl'
+import { applyPageMeta } from '../utils/pageMeta'
 import { DEFAULT_THEME, fontOptions, applyHotelTheme } from '../utils/applyHotelTheme'
 import { LOCATION_TYPE_OPTIONS as DEFAULT_LOCATION_TYPE_OPTIONS } from '../constants/hotelLocationTypes'
 import BottomNav from '../components/BottomNav.vue'
@@ -194,6 +195,15 @@ async function loadConfig() {
   try {
     const { data } = await api.get(`/api/admin/${hotelSlug.value}/config`)
     assignHotel(data.hotel || {})
+    const hotelTitle = String(data.hotel?.name || '').trim()
+    if (hotelTitle) {
+      applyPageMeta({
+        title: hotelTitle,
+        description: String(data.hotel?.description || '').trim() || `จองห้องพัก ${hotelTitle}`,
+        image: apiMediaUrl(data.hotel?.logo_url) || `${window.location.origin}/favicon.png`,
+        url: window.location.href,
+      })
+    }
     assignSettings(data.settings || {})
     if (data.hotel?.theme) assignSettings(data.hotel.theme)
     locationTypeOptions.value = data.hotel?.catalog_options?.location_types?.length

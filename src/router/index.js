@@ -17,6 +17,8 @@ import PlatformSettingsView from '../views/PlatformSettingsView.vue'
 import PaymentView     from '../views/PaymentView.vue'
 import ChatView        from '../views/ChatView.vue'
 import HotelInfoView   from '../views/HotelInfoView.vue'
+import BookingSiteView from '../views/BookingSiteView.vue'
+import BookingSiteAdminView from '../views/BookingSiteAdminView.vue'
 
 const hotelChildren = [
   { path: 'login',    component: LoginView,    meta: { guest: true } },
@@ -28,6 +30,8 @@ const hotelChildren = [
   { path: 'payment/:bookingId', component: PaymentView, meta: { requiresAuth: true } },
   { path: 'admin',    component: AdminView,    meta: { requiresAuth: true, requiresAdmin: true, appNav: true } },
   { path: 'admin/config', component: HotelConfigView, meta: { requiresAuth: true, requiresAdmin: true, appNav: true } },
+  { path: 'booking-site/admin', component: BookingSiteAdminView, meta: { requiresAuth: true, requiresAdmin: true, bookingSite: true } },
+  { path: 'booking-site', component: BookingSiteView, meta: { bookingSite: true } },
   { path: 'admin/platform', component: PlatformSettingsView, meta: { requiresAuth: true, requiresSuperAdmin: true, appNav: true } },
   { path: 'auth/callback', component: LoginView, meta: { guest: true } },
   { path: '', redirect: (to) => ({ path: `/${to.params.hotelSlug}/bookings` }) },
@@ -114,6 +118,7 @@ router.beforeEach(async (to) => {
     if (path.endsWith('/reviews') && !features.enabled('nav_reviews')) return hotelPath(hotelSlug, '/bookings')
     if (path.endsWith('/info') && !features.enabled('nav_info')) return hotelPath(hotelSlug, '/bookings')
     if (path.endsWith('/chat') && !features.enabled('nav_chat')) return hotelPath(hotelSlug, '/bookings')
+    if (path.includes('/booking-site') && !features.enabled('feat_booking_site')) return hotelPath(hotelSlug, '/bookings')
   }
 
   return true

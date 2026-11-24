@@ -16,6 +16,7 @@ export const useFeaturesStore = defineStore('features', {
     showSettingsTab: (state) => !state.loadedForSlug || state.flags.tab_settings !== false,
     paymentEnabled: (state) => !state.loadedForSlug || state.flags.feat_payment_slip !== false,
     couponsEnabled: (state) => !state.loadedForSlug || state.flags.feat_coupons !== false,
+    bookingSiteEnabled: (state) => !state.loadedForSlug || state.flags.feat_booking_site !== false,
   },
   actions: {
     enabled(key) {

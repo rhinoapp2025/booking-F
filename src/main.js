@@ -20,6 +20,10 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 
+router.isReady().then(() => {
+  app.mount('#app')
+})
+
 if (typeof window !== 'undefined') {
   window.addEventListener('pageshow', () => {
     dismissBlockingOverlays()
@@ -32,5 +36,3 @@ if (typeof window !== 'undefined') {
     }
   })
 }
-
-app.mount('#app')

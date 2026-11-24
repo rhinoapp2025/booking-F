@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { applyHotelTheme, DEFAULT_THEME } from '../utils/applyHotelTheme'
 import { formatUiText } from '../utils/formatUiText'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
-import { applyPageMeta } from '../utils/pageMeta'
+import { applyPageMeta, tabTitle } from '../utils/pageMeta'
 import { useHotelStore } from './hotel'
 
 const FALLBACK = {
@@ -27,7 +27,7 @@ function applyTheme(settings, hotelSlug = '', hotelName = '') {
     }
   }
   const pageTitle   = settings.ui_page_title || FALLBACK.ui_page_title
-  const title       = name || pageTitle
+  const title       = tabTitle(name || pageTitle)
   const description = settings.ui_tagline || FALLBACK.ui_tagline
   const image       = resolveUiImageUrl(settings.ui_logo_url, hotelSlug)
   applyPageMeta({
@@ -71,7 +71,7 @@ export const useUiSettingsStore = defineStore('uiSettings', {
         ui_hero_image_url: branding?.hero_url || '',
       }
       this.loadedForSlug = ''
-      applyTheme(this.settings, '', 'theotel')
+      applyTheme(this.settings, '', '')
       return this.settings
     },
     applyLocal(partial) {

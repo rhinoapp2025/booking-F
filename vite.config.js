@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { writeHotelSharePages } from './scripts/writeHotelSharePages.mjs'
 
 function buildFirebaseServiceWorkerSource(env) {
   const config = {
@@ -136,6 +137,15 @@ function firebaseMessagingSwPlugin() {
   }
 }
 
+function hotelSharePagesPlugin() {
+  return {
+    name: 'hotel-share-pages',
+    async closeBundle() {
+      await writeHotelSharePages(resolve(process.cwd(), 'dist'))
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [vue(), appVersionPlugin(), firebaseMessagingSwPlugin()],
+  plugins: [vue(), appVersionPlugin(), firebaseMessagingSwPlugin(), hotelSharePagesPlugin()],
 })

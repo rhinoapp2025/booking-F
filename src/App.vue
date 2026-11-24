@@ -7,7 +7,8 @@ import { useUiSettingsStore } from './stores/uiSettings'
 import { useNetworkBrandingStore } from './stores/networkBranding'
 import AppUpdateBanner from './components/AppUpdateBanner.vue'
 import { useAppUpdate } from './composables/useAppUpdate'
-import { applyPageMeta } from './utils/pageMeta'
+import { applyPageMeta, tabTitle } from './utils/pageMeta'
+import { logoIconVersion, syncHotelIcons } from './utils/hotelIcons'
 import { apiMediaUrl } from './utils/resolveUiImageUrl'
 import {
   initPushNotificationsWhenReady,
@@ -18,10 +19,11 @@ const auth = useAuthStore()
 const hotelStore = useHotelStore()
 const uiSettings = useUiSettingsStore()
 const networkBranding = useNetworkBrandingStore()
-const isAdminRoute = computed(() => /\/admin(\/|$)/.test(route.path))
+const isAdminRoute = computed(() => /\/admin(\/|$)/.test(route.path) && !route.meta.bookingSite)
 const hasAppNav = computed(() => !!route.meta.appNav)
 const isLoginRoute = computed(() => /\/login$|\/auth\/callback$/.test(route.path))
 const isNetworkSearch = computed(() => route.path === '/')
+const isBookingSiteRoute = computed(() => Boolean(route.meta.bookingSite))
 const { updateAvailable, reload } = useAppUpdate()
 
 let brandingReq = 0
@@ -55,9 +57,21 @@ watch(
 )
 
 watch(
+  () => [route.path, route.params.hotelSlug, hotelStore.hotel?.logo_url],
+  () => {
+    syncHotelIcons({
+      hotelSlug: route.path === '/' ? '' : route.params.hotelSlug,
+      iconVersion: logoIconVersion(hotelStore.hotel?.logo_url),
+    })
+  },
+  { immediate: true },
+)
+
+watch(
   () => [
     route.path,
     hotelStore.hotel?.name,
+    hotelStore.hotel?.slug,
     hotelStore.hotel?.logo_url,
     hotelStore.hotel?.description,
   ],
@@ -73,9 +87,11 @@ watch(
       return
     }
     const hotel = hotelStore.hotel
-    const name = String(hotel?.name || '').trim()
+    const routeSlug = String(route.params.hotelSlug || '').trim().toLowerCase()
+    const loadedSlug = String(hotel?.slug || '').trim().toLowerCase()
+    const name = routeSlug && loadedSlug === routeSlug ? String(hotel?.name || '').trim() : ''
     applyPageMeta({
-      title: name || 'theotel',
+      title: tabTitle(name, route.path),
       description: String(hotel?.description || '').trim() || (name ? `จองห้องพัก ${name}` : 'จองห้องพักออนไลน์กับ theotel'),
       image: apiMediaUrl(hotel?.logo_url) || icon,
       url: window.location.href,
@@ -97,16 +113,26 @@ function syncPushListener() {
     .catch(() => {})
 }
 
+function syncBookingSiteScroll() {
+  document.documentElement.classList.toggle('booking-site-open', isBookingSiteRoute.value)
+}
+
 onMounted(() => {
   syncPushListener()
+  syncBookingSiteScroll()
 })
 
 onUnmounted(() => {
   stopPushListener?.()
+  document.documentElement.classList.remove('booking-site-open')
 })
 
 watch(() => auth.isLoggedIn, () => {
   syncPushListener()
+})
+
+watch(isBookingSiteRoute, () => {
+  syncBookingSiteScroll()
 })
 </script>
 
@@ -118,6 +144,7 @@ watch(() => auth.isLoggedIn, () => {
       'app-shell--nav': hasAppNav,
       'app-shell--login': isLoginRoute,
       'app-shell--search': isNetworkSearch,
+      'app-shell--site': isBookingSiteRoute,
     }"
   >
     <AppUpdateBanner :visible="updateAvailable" @reload="reload" />
@@ -141,6 +168,11 @@ watch(() => auth.isLoggedIn, () => {
   overflow-x: clip;
   box-sizing: border-box;
   background: var(--color-background);
+}
+
+.app-shell--site {
+  max-width: none;
+  background: transparent;
 }
 
 .app-shell--login,

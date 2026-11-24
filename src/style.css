@@ -121,6 +121,19 @@ html {
   overscroll-behavior-y: none;
 }
 
+html.booking-site-open,
+html.booking-site-open body,
+html.booking-site-open #app {
+  position: relative;
+  inset: auto;
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+  overscroll-behavior: auto;
+  background: var(--bg, #f4f1ea);
+  color: var(--ink, #1a2332);
+}
+
 body {
   margin: 0;
   font-size: var(--text-body);
