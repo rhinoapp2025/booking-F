@@ -55,6 +55,7 @@ const newPlanIncludesBreakfast = ref(false)
 const newPlanIncludesExtrabed = ref(false)
 const showBulkForm = ref(false)
 const showStopForm = ref(false)
+const showSellForm = ref(false)
 const showDisplayForm = ref(false)
 const formTab = ref('update')
 const cancelPlanId = ref('')
@@ -87,7 +88,19 @@ const displayPrice = reactive({
   weekdays: [0, 1, 2, 3, 4, 5, 6],
   input_mode: 'percent',
   value: '',
+  rooms: '',
 })
+const sellRooms = reactive({
+  mode: 'room_type',
+  room_type_id: '',
+  rate_plan_id: '',
+  date_from: localYmd(),
+  date_to: addDaysLocal(localYmd(), 13),
+  weekdays: [0, 1, 2, 3, 4, 5, 6],
+  rooms: '',
+})
+const sellError = ref('')
+const sellMessage = ref('')
 const displayError = ref('')
 const displayMessage = ref('')
 
@@ -138,6 +151,31 @@ const stopSummary = computed(() => {
     return `เรทแพลน: ${stopPlanName.value} · ประเภทห้อง: ทุกประเภทที่ใช้เรทนี้ — เลือกวันในสัปดาห์ได้`
   }
   return `ประเภท: ${stopTypeName.value} · เรทแพลน: ${stopPlanName.value} — เลือกวันในสัปดาห์ได้`
+})
+const plansForSellType = computed(() => {
+  const type = (calendar.value.room_types || []).find((t) => t.id === sellRooms.room_type_id)
+  return type?.rate_plans || []
+})
+const sellPlanOptions = computed(() => {
+  if (sellRooms.mode === 'room_type_rate_plan') return plansForSellType.value
+  return hotelPlans.value
+})
+const sellTypeName = computed(() =>
+  calendar.value.room_types.find((t) => t.id === sellRooms.room_type_id)?.name || 'ยังไม่เลือก'
+)
+const sellPlanName = computed(() =>
+  hotelPlans.value.find((p) => p.id === sellRooms.rate_plan_id)?.name
+    || plansForSellType.value.find((p) => p.id === sellRooms.rate_plan_id)?.name
+    || 'ยังไม่เลือก'
+)
+const sellSummary = computed(() => {
+  if (sellRooms.mode === 'room_type') {
+    return `ประเภท: ${sellTypeName.value} · เรทแพลน: ทุกเรทของประเภทนี้ — ตัวเลขนี้โชว์ในแถวเรทแพลน`
+  }
+  if (sellRooms.mode === 'rate_plan') {
+    return `เรทแพลน: ${sellPlanName.value} · ประเภทห้อง: ทุกประเภทที่ใช้เรทนี้ — ตัวเลขนี้โชว์ในแถวเรทแพลน`
+  }
+  return `ประเภท: ${sellTypeName.value} · เรทแพลน: ${sellPlanName.value} — ตัวเลขนี้โชว์ในแถวเรทแพลน`
 })
 const plansForDisplayType = computed(() => {
   const type = (calendar.value.room_types || []).find((t) => t.id === displayPrice.room_type_id)
@@ -325,6 +363,111 @@ function closeBulkForm() {
   showBulkForm.value = false
 }
 
+function openSellForm() {
+  sellRooms.mode = 'room_type_rate_plan'
+  sellRooms.room_type_id = selectedTypeId.value || calendar.value.room_types[0]?.id || ''
+  const typePlans = (calendar.value.room_types || []).find((t) => t.id === sellRooms.room_type_id)?.rate_plans || []
+  sellRooms.rate_plan_id = selectedPlanId.value
+    || typePlans[0]?.id
+    || hotelPlans.value[0]?.id
+    || ''
+  sellRooms.date_from = from.value
+  sellRooms.date_to = to.value
+  sellRooms.weekdays = [0, 1, 2, 3, 4, 5, 6]
+  sellRooms.rooms = ''
+  sellError.value = ''
+  sellMessage.value = ''
+  showSellForm.value = true
+}
+
+function closeSellForm() {
+  showSellForm.value = false
+}
+
+function setSellMode(mode) {
+  sellRooms.mode = mode
+  sellError.value = ''
+  sellMessage.value = ''
+  if (mode === 'room_type') {
+    if (!sellRooms.room_type_id && calendar.value.room_types[0]) {
+      sellRooms.room_type_id = calendar.value.room_types[0].id
+    }
+    sellRooms.rate_plan_id = ''
+  } else if (mode === 'rate_plan') {
+    sellRooms.room_type_id = ''
+    if (!sellRooms.rate_plan_id && hotelPlans.value[0]) {
+      sellRooms.rate_plan_id = hotelPlans.value[0].id
+    }
+  } else if (mode === 'room_type_rate_plan') {
+    if (!sellRooms.room_type_id && calendar.value.room_types[0]) {
+      sellRooms.room_type_id = calendar.value.room_types[0].id
+    }
+    if (sellRooms.rate_plan_id && !plansForSellType.value.some((p) => p.id === sellRooms.rate_plan_id)) {
+      sellRooms.rate_plan_id = plansForSellType.value[0]?.id || ''
+    }
+  }
+}
+
+function toggleSellWeekday(id) {
+  const i = sellRooms.weekdays.indexOf(id)
+  if (i >= 0) sellRooms.weekdays.splice(i, 1)
+  else sellRooms.weekdays.push(id)
+}
+
+function sellScopePayload() {
+  return {
+    mode: sellRooms.mode,
+    room_type_id: sellRooms.mode === 'rate_plan' ? undefined : (sellRooms.room_type_id || undefined),
+    rate_plan_id: sellRooms.mode === 'room_type' ? undefined : (sellRooms.rate_plan_id || undefined),
+    date_from: sellRooms.date_from,
+    date_to: sellRooms.date_to,
+    weekdays: [...sellRooms.weekdays],
+  }
+}
+
+function validateSellScope() {
+  if (!sellRooms.date_from || !sellRooms.date_to || sellRooms.date_to < sellRooms.date_from) {
+    return 'เลือกช่วงวันที่ให้ถูกต้อง'
+  }
+  if (!sellRooms.weekdays.length) return 'เลือกอย่างน้อย 1 วันในสัปดาห์'
+  if (sellRooms.mode === 'room_type' && !sellRooms.room_type_id) return 'เลือกประเภทห้อง'
+  if (sellRooms.mode === 'rate_plan' && !sellRooms.rate_plan_id) return 'เลือกเรทแพลน'
+  if (sellRooms.mode === 'room_type_rate_plan' && (!sellRooms.room_type_id || !sellRooms.rate_plan_id)) {
+    return 'เลือกประเภทห้องและเรทแพลน'
+  }
+  return ''
+}
+
+async function submitSellRooms(action) {
+  sellError.value = ''
+  sellMessage.value = ''
+  const scopeError = validateSellScope()
+  if (scopeError) {
+    sellError.value = scopeError
+    return
+  }
+  if (action === 'set' && !String(sellRooms.rooms ?? '').trim()) {
+    sellError.value = 'กรอกจำนวนห้องขาย'
+    return
+  }
+  saving.value = true
+  try {
+    const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/sell-rooms`, {
+      ...sellScopePayload(),
+      rooms: sellRooms.rooms,
+      action,
+    })
+    await loadCalendar()
+    sellMessage.value = action === 'clear'
+      ? `ล้างจำนวนห้องขายแล้ว (${data.cleared || 0} วัน)`
+      : `บันทึกจำนวนห้องขาย ${data.rooms} ห้องแล้ว (${data.updated || 0} วัน)`
+  } catch (err) {
+    sellError.value = err?.response?.data?.error || 'บันทึกจำนวนห้องขายไม่สำเร็จ'
+  } finally {
+    saving.value = false
+  }
+}
+
 function openStopForm() {
   stopSale.date_from = from.value
   stopSale.date_to = to.value
@@ -354,6 +497,7 @@ function openDisplayForm() {
   displayPrice.weekdays = [0, 1, 2, 3, 4, 5, 6]
   displayPrice.input_mode = 'percent'
   displayPrice.value = ''
+  displayPrice.rooms = ''
   displayError.value = ''
   displayMessage.value = ''
   showDisplayForm.value = true
@@ -387,27 +531,66 @@ function setDisplayMode(mode) {
   }
 }
 
+function displayScopePayload() {
+  return {
+    mode: displayPrice.mode,
+    room_type_id: displayPrice.mode === 'rate_plan' ? undefined : (displayPrice.room_type_id || undefined),
+    rate_plan_id: displayPrice.mode === 'room_type' ? undefined : (displayPrice.rate_plan_id || undefined),
+    date_from: displayPrice.date_from,
+    date_to: displayPrice.date_to,
+    weekdays: [...displayPrice.weekdays],
+  }
+}
+
+function validateDisplayScope() {
+  if (!displayPrice.date_from || !displayPrice.date_to || displayPrice.date_to < displayPrice.date_from) {
+    return 'เลือกช่วงวันที่ให้ถูกต้อง'
+  }
+  if (!displayPrice.weekdays.length) return 'เลือกอย่างน้อย 1 วันในสัปดาห์'
+  if (displayPrice.mode === 'room_type' && !displayPrice.room_type_id) return 'เลือกประเภทห้อง'
+  if (displayPrice.mode === 'rate_plan' && !displayPrice.rate_plan_id) return 'เลือกเรทแพลน'
+  if (displayPrice.mode === 'room_type_rate_plan' && (!displayPrice.room_type_id || !displayPrice.rate_plan_id)) {
+    return 'เลือกประเภทห้องและเรทแพลน'
+  }
+  return ''
+}
+
+async function submitDisplayRooms(action) {
+  displayError.value = ''
+  displayMessage.value = ''
+  const scopeError = validateDisplayScope()
+  if (scopeError) {
+    displayError.value = scopeError
+    return
+  }
+  if (action === 'set' && !String(displayPrice.rooms ?? '').trim()) {
+    displayError.value = 'กรอกจำนวนห้องที่ต้องการแสดง'
+    return
+  }
+  saving.value = true
+  try {
+    const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/display-rooms`, {
+      ...displayScopePayload(),
+      rooms: displayPrice.rooms,
+      action,
+    })
+    await loadCalendar()
+    displayMessage.value = action === 'clear'
+      ? `ล้างจำนวนห้องที่แสดงแล้ว (${data.cleared || 0} วัน)`
+      : `บันทึกให้หน้าจองแสดงไม่เกิน ${data.rooms} ห้องแล้ว (${data.updated || 0} วัน)`
+  } catch (err) {
+    displayError.value = err?.response?.data?.error || 'บันทึกจำนวนห้องที่แสดงไม่สำเร็จ'
+  } finally {
+    saving.value = false
+  }
+}
+
 async function submitDisplayPrice(action) {
   displayError.value = ''
   displayMessage.value = ''
-  if (!displayPrice.date_from || !displayPrice.date_to || displayPrice.date_to < displayPrice.date_from) {
-    displayError.value = 'เลือกช่วงวันที่ให้ถูกต้อง'
-    return
-  }
-  if (!displayPrice.weekdays.length) {
-    displayError.value = 'เลือกอย่างน้อย 1 วันในสัปดาห์'
-    return
-  }
-  if (displayPrice.mode === 'room_type' && !displayPrice.room_type_id) {
-    displayError.value = 'เลือกประเภทห้อง'
-    return
-  }
-  if (displayPrice.mode === 'rate_plan' && !displayPrice.rate_plan_id) {
-    displayError.value = 'เลือกเรทแพลน'
-    return
-  }
-  if (displayPrice.mode === 'room_type_rate_plan' && (!displayPrice.room_type_id || !displayPrice.rate_plan_id)) {
-    displayError.value = 'เลือกประเภทห้องและเรทแพลน'
+  const scopeError = validateDisplayScope()
+  if (scopeError) {
+    displayError.value = scopeError
     return
   }
   if (action === 'set' && !String(displayPrice.value || '').trim()) {
@@ -417,12 +600,7 @@ async function submitDisplayPrice(action) {
   saving.value = true
   try {
     const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/display-price`, {
-      mode: displayPrice.mode,
-      room_type_id: displayPrice.mode === 'rate_plan' ? undefined : (displayPrice.room_type_id || undefined),
-      rate_plan_id: displayPrice.mode === 'room_type' ? undefined : (displayPrice.rate_plan_id || undefined),
-      date_from: displayPrice.date_from,
-      date_to: displayPrice.date_to,
-      weekdays: [...displayPrice.weekdays],
+      ...displayScopePayload(),
       input_mode: displayPrice.input_mode,
       value: displayPrice.value,
       action,
@@ -742,7 +920,9 @@ async function applyBulk(kind) {
 
 function onKeydown(e) {
   if (e.key !== 'Escape') return
-  if (showStopForm.value) closeStopForm()
+  if (showSellForm.value) closeSellForm()
+  else if (showStopForm.value) closeStopForm()
+  else if (showDisplayForm.value) closeDisplayForm()
   else if (showBulkForm.value) closeBulkForm()
 }
 
@@ -776,8 +956,25 @@ watch(showBulkForm, (on) => {
 })
 
 watch(showStopForm, (on) => {
-  if (!on && !showBulkForm.value) document.body.style.overflow = ''
+  if (!on && !showBulkForm.value && !showSellForm.value && !showDisplayForm.value) document.body.style.overflow = ''
   else if (on) document.body.style.overflow = 'hidden'
+})
+
+watch(showSellForm, (on) => {
+  if (!on && !showBulkForm.value && !showStopForm.value && !showDisplayForm.value) document.body.style.overflow = ''
+  else if (on) document.body.style.overflow = 'hidden'
+})
+
+watch(showDisplayForm, (on) => {
+  if (!on && !showBulkForm.value && !showStopForm.value && !showSellForm.value) document.body.style.overflow = ''
+  else if (on) document.body.style.overflow = 'hidden'
+})
+
+watch(() => sellRooms.room_type_id, () => {
+  if (sellRooms.mode !== 'room_type_rate_plan') return
+  if (!plansForSellType.value.some((p) => p.id === sellRooms.rate_plan_id)) {
+    sellRooms.rate_plan_id = ''
+  }
 })
 
 watch(() => stopSale.room_type_id, () => {
@@ -822,6 +1019,9 @@ onUnmounted(() => {
         </button>
         <button type="button" class="btn btn-primary cm-update" @click="openBulkForm">
           อัปเดตราคา
+        </button>
+        <button type="button" class="btn btn-outline cm-sell" @click="openSellForm">
+          อัปจำนวนห้องขาย
         </button>
         <button type="button" class="btn btn-outline cm-display" @click="openDisplayForm">
           ราคาแสดง
@@ -905,6 +1105,7 @@ onUnmounted(() => {
                       </th>
                       <td v-for="d in calendar.dates" :key="'ph-'+plan.id+d" :class="{ 'cm-stopped': plan.stop_sale?.[d] }">
                         <span v-if="plan.stop_sale?.[d]" class="cm-stop-badge">หยุด</span>
+                        <span v-else-if="plan.sell_rooms?.[d] != null">{{ plan.sell_rooms[d] }}</span>
                         <span v-else class="muted-cell">—</span>
                       </td>
                     </tr>
@@ -992,9 +1193,88 @@ onUnmounted(() => {
       </div>
       <p class="muted cm-hint">
         แถวประเภทห้อง = ว่าง{{ calendar.pms ? ' PMS' : 'คลัง' }}
+        · แถวเรทแพลน = จำนวนห้องขายที่ตั้งไว้ (ยังไม่ตั้งจะเป็น —)
         · ช่องสีแดงอ่อน = หยุดขาย
-        · กดแถวเพื่อเลือก แล้วเปิดฟอร์มอัปเดตราคา / หยุดขาย
+        · กดแถวเพื่อเลือก แล้วเปิดฟอร์มอัปเดตราคา / จำนวนห้องขาย / หยุดขาย
       </p>
+    </div>
+
+    <div
+      v-if="showSellForm"
+      class="cm-backdrop"
+    >
+      <div class="cm-sheet" role="dialog" aria-modal="true" aria-labelledby="cm-sell-title">
+        <div class="cm-sheet-head">
+          <h2 id="cm-sell-title" class="info-title">อัปจำนวนห้องขาย</h2>
+          <button type="button" class="icon-btn" aria-label="ปิด" @click="closeSellForm">
+            <i class="ti ti-x"></i>
+          </button>
+        </div>
+        <div class="cm-form-tabs">
+          <button type="button" class="tab-btn" :class="{ active: sellRooms.mode === 'room_type' }" @click="setSellMode('room_type')">Roomtype</button>
+          <button type="button" class="tab-btn" :class="{ active: sellRooms.mode === 'rate_plan' }" @click="setSellMode('rate_plan')">Rateplan</button>
+          <button type="button" class="tab-btn" :class="{ active: sellRooms.mode === 'room_type_rate_plan' }" @click="setSellMode('room_type_rate_plan')">Roomtype + Rateplan</button>
+        </div>
+        <div class="cm-sheet-body">
+          <p class="muted">{{ sellSummary }}</p>
+          <div class="cm-bulk-grid">
+            <div class="cm-row">
+              <label class="form-label">ประเภทห้อง</label>
+              <select v-model="sellRooms.room_type_id" class="form-input" :disabled="sellRooms.mode === 'rate_plan'">
+                <option v-if="sellRooms.mode === 'rate_plan'" value="">ทุกประเภทที่ใช้เรทนี้</option>
+                <template v-else>
+                  <option value="">เลือกประเภทห้อง</option>
+                  <option v-for="t in calendar.room_types" :key="'sell-'+t.id" :value="t.id">{{ t.name }}</option>
+                </template>
+              </select>
+            </div>
+            <div class="cm-row">
+              <label class="form-label">เรทแพลน</label>
+              <select v-model="sellRooms.rate_plan_id" class="form-input" :disabled="sellRooms.mode === 'room_type'">
+                <option v-if="sellRooms.mode === 'room_type'" value="">ทุกเรทของประเภทนี้</option>
+                <template v-else>
+                  <option value="">เลือกเรทแพลน</option>
+                  <option v-for="p in sellPlanOptions" :key="'sellp-'+p.id" :value="p.id">
+                    {{ p.name }}{{ p.includes_breakfast ? ' · อาหารเช้า' : '' }}
+                  </option>
+                </template>
+              </select>
+            </div>
+          </div>
+          <div class="cm-bulk-grid">
+            <div class="cm-row">
+              <label class="form-label">ตั้งแต่</label>
+              <input v-model="sellRooms.date_from" type="date" class="form-input" />
+            </div>
+            <div class="cm-row">
+              <label class="form-label">ถึง</label>
+              <input v-model="sellRooms.date_to" type="date" class="form-input" :min="sellRooms.date_from" />
+            </div>
+          </div>
+          <div class="cm-weekdays">
+            <button
+              v-for="d in WEEKDAYS"
+              :key="'sellday-'+d.id"
+              type="button"
+              class="cm-day-btn"
+              :class="{ active: sellRooms.weekdays.includes(d.id) }"
+              @click="toggleSellWeekday(d.id)"
+            >{{ d.label }}</button>
+          </div>
+          <div class="cm-row">
+            <label class="form-label">จำนวนห้องขาย</label>
+            <input v-model="sellRooms.rooms" type="number" min="0" max="9999" step="1" class="form-input" placeholder="เช่น 5" />
+          </div>
+          <button class="btn btn-primary" type="button" :disabled="saving" @click="submitSellRooms('set')">
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึกจำนวนห้องขาย' }}
+          </button>
+          <button class="btn btn-outline" type="button" :disabled="saving" @click="submitSellRooms('clear')">
+            ล้างจำนวนห้องขาย
+          </button>
+          <p v-if="sellMessage" class="success-msg">{{ sellMessage }}</p>
+          <p v-if="sellError" class="error-msg">{{ sellError }}</p>
+        </div>
+      </div>
     </div>
 
     <div
@@ -1029,7 +1309,7 @@ onUnmounted(() => {
           >Roomtype + Rateplan</button>
         </div>
         <div class="cm-sheet-body">
-          <p class="muted">{{ displaySummary }} — ราคาแสดงใช้ขีดฆ่าบนหน้าจอง ไม่เปลี่ยนราคาขายจริง</p>
+          <p class="muted">{{ displaySummary }} — ราคาแสดงใช้ขีดฆ่าบนหน้าจอง ไม่เปลี่ยนราคาขายจริง จำนวนห้องที่แสดงไม่เกินห้องว่างจริง</p>
 
           <div class="cm-bulk-grid">
             <div class="cm-row">
@@ -1130,6 +1410,20 @@ onUnmounted(() => {
             <p class="muted">ตัวอย่างจากราคาขายในตาราง (ไม่เปลี่ยนยอดที่แขกจ่าย)</p>
           </div>
 
+          <div class="cm-row">
+            <label class="form-label">แสดงจำนวนห้อง</label>
+            <input
+              v-model="displayPrice.rooms"
+              type="number"
+              min="0"
+              max="9999"
+              step="1"
+              class="form-input"
+              placeholder="เช่น 3 — หน้าจองโชว์ไม่เกินจำนวนนี้"
+            />
+            <p class="muted">ถ้าว่างจริง 5 และตั้งแสดง 3 หน้าจองจะขึ้น 3 ถ้าว่างจริงน้อยกว่าที่ตั้ง จะขึ้นตามห้องจริง</p>
+          </div>
+
           <button
             class="btn btn-primary"
             type="button"
@@ -1145,6 +1439,22 @@ onUnmounted(() => {
             @click="submitDisplayPrice('clear')"
           >
             ล้างราคาแสดง
+          </button>
+          <button
+            class="btn btn-outline"
+            type="button"
+            :disabled="saving"
+            @click="submitDisplayRooms('set')"
+          >
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึกจำนวนที่แสดง' }}
+          </button>
+          <button
+            class="btn btn-outline"
+            type="button"
+            :disabled="saving"
+            @click="submitDisplayRooms('clear')"
+          >
+            ล้างจำนวนที่แสดง
           </button>
 
           <p v-if="displayMessage" class="success-msg">{{ displayMessage }}</p>
