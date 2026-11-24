@@ -5,8 +5,8 @@ import api from '../api/axios'
 
 const { hotelSlug } = useHotelRoute()
 
-const WINDOWS = [7, 14, 30, 60, 120, 360]
-const MAX_CALENDAR_DAYS = 360
+const WINDOWS = [7, 14, 30, 60, 120, 360, 720, 1440]
+const MAX_CALENDAR_DAYS = 1440
 const WEEKDAYS = [
   { id: 0, label: 'จ' },
   { id: 1, label: 'อ' },
@@ -76,6 +76,7 @@ const stopSale = reactive({
   date_from: localYmd(),
   date_to: addDaysLocal(localYmd(), 13),
   weekdays: [0, 1, 2, 3, 4, 5, 6],
+  min_rooms: '',
 })
 const stopError = ref('')
 const stopMessage = ref('')
@@ -252,6 +253,20 @@ function colParts(ymd) {
     day: dt.getDate(),
     mon: dt.toLocaleDateString('en-GB', { month: 'short' }),
   }
+}
+
+function autoStopped(type, plan, ymd) {
+  const min = type?.stop_min_rooms
+  if (min == null || min === '') return false
+  const sell = plan?.sell_rooms?.[ymd]
+  const vacant = type?.pms_vacant?.[ymd]
+  const basis = sell != null && sell !== '' ? Number(sell) : (vacant == null || vacant === '' ? null : Number(vacant))
+  if (basis == null || !Number.isFinite(basis)) return false
+  return basis <= Number(min)
+}
+
+function planStopped(type, plan, ymd) {
+  return Boolean(plan?.stop_sale?.[ymd]) || autoStopped(type, plan, ymd)
 }
 
 function allotLabel(type, ymd) {
@@ -475,6 +490,8 @@ function openStopForm() {
   stopSale.mode = 'room_type'
   stopSale.room_type_id = selectedTypeId.value || calendar.value.room_types[0]?.id || ''
   stopSale.rate_plan_id = selectedPlanId.value || ''
+  const selected = calendar.value.room_types.find((t) => t.id === stopSale.room_type_id)
+  stopSale.min_rooms = selected?.stop_min_rooms != null ? String(selected.stop_min_rooms) : ''
   stopError.value = ''
   stopMessage.value = ''
   showStopForm.value = true
@@ -684,6 +701,45 @@ async function submitStopSale(action) {
     }
   } catch (err) {
     stopError.value = err?.response?.data?.error || 'บันทึกหยุดขายไม่สำเร็จ'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function submitStopMin(action) {
+  stopError.value = ''
+  stopMessage.value = ''
+  if (stopSale.mode === 'room_type' && !stopSale.room_type_id) {
+    stopError.value = 'เลือกประเภทห้อง'
+    return
+  }
+  if (stopSale.mode === 'rate_plan' && !stopSale.rate_plan_id) {
+    stopError.value = 'เลือกเรทแพลน'
+    return
+  }
+  if (stopSale.mode === 'room_type_rate_plan' && (!stopSale.room_type_id || !stopSale.rate_plan_id)) {
+    stopError.value = 'เลือกประเภทห้องและเรทแพลน'
+    return
+  }
+  if (action === 'set' && !String(stopSale.min_rooms ?? '').trim()) {
+    stopError.value = 'กรอกจำนวนห้องขั้นต่ำ'
+    return
+  }
+  saving.value = true
+  try {
+    const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/stop-min-rooms`, {
+      mode: stopSale.mode,
+      room_type_id: stopSale.mode === 'rate_plan' ? undefined : (stopSale.room_type_id || undefined),
+      rate_plan_id: stopSale.mode === 'room_type' ? undefined : (stopSale.rate_plan_id || undefined),
+      rooms: stopSale.min_rooms,
+      action,
+    })
+    await loadCalendar()
+    stopMessage.value = action === 'clear'
+      ? 'ล้างเกณฑ์หยุดขายอัตโนมัติแล้ว'
+      : `ตั้งหยุดขายเมื่อห้องเหลือไม่เกิน ${data.rooms} แล้ว`
+  } catch (err) {
+    stopError.value = err?.response?.data?.error || 'บันทึกเกณฑ์หยุดขายไม่สำเร็จ'
   } finally {
     saving.value = false
   }
@@ -1076,6 +1132,7 @@ onUnmounted(() => {
                     <i :class="['ti', expanded[type.id] ? 'ti-chevron-down' : 'ti-chevron-right']"></i>
                   </button>
                   <span class="cm-type-name">{{ type.name }}</span>
+                  <span v-if="type.stop_min_rooms != null" class="cm-abf-tag">หยุดเมื่อ ≤{{ type.stop_min_rooms }}</span>
                 </th>
                 <td
                   v-for="d in calendar.dates"
@@ -1103,8 +1160,9 @@ onUnmounted(() => {
                         <span v-if="plan.includes_breakfast" class="cm-abf-tag">อาหารเช้า</span>
                         <span v-if="plan.includes_extrabed" class="cm-abf-tag">extrabed</span>
                       </th>
-                      <td v-for="d in calendar.dates" :key="'ph-'+plan.id+d" :class="{ 'cm-stopped': plan.stop_sale?.[d] }">
+                      <td v-for="d in calendar.dates" :key="'ph-'+plan.id+d" :class="{ 'cm-stopped': planStopped(type, plan, d) }">
                         <span v-if="plan.stop_sale?.[d]" class="cm-stop-badge">หยุด</span>
+                        <span v-else-if="autoStopped(type, plan, d)" class="cm-stop-badge">ต่ำ</span>
                         <span v-else-if="plan.sell_rooms?.[d] != null">{{ plan.sell_rooms[d] }}</span>
                         <span v-else class="muted-cell">—</span>
                       </td>
@@ -1119,7 +1177,7 @@ onUnmounted(() => {
                       <td
                         v-for="d in calendar.dates"
                         :key="'p-'+plan.id+d"
-                        :class="{ 'cm-stopped': plan.stop_sale?.[d] }"
+                        :class="{ 'cm-stopped': planStopped(type, plan, d) }"
                       >
                         <input
                           class="cm-cell"
@@ -1141,7 +1199,7 @@ onUnmounted(() => {
                       <td
                         v-for="d in calendar.dates"
                         :key="'abf-'+plan.id+d"
-                        :class="{ 'cm-stopped': plan.stop_sale?.[d] }"
+                        :class="{ 'cm-stopped': planStopped(type, plan, d) }"
                       >
                         <input
                           class="cm-cell"
@@ -1163,7 +1221,7 @@ onUnmounted(() => {
                       <td
                         v-for="d in calendar.dates"
                         :key="'xb-'+plan.id+d"
-                        :class="{ 'cm-stopped': plan.stop_sale?.[d] }"
+                        :class="{ 'cm-stopped': planStopped(type, plan, d) }"
                       >
                         <input
                           class="cm-cell"
@@ -1568,6 +1626,26 @@ onUnmounted(() => {
             @click="submitStopSale('open')"
           >
             เปิดขายอีกครั้ง
+          </button>
+
+          <div class="cm-row">
+            <label class="form-label">หยุดขายเมื่อห้องเหลือไม่เกิน</label>
+            <input
+              v-model="stopSale.min_rooms"
+              type="number"
+              min="0"
+              max="9999"
+              step="1"
+              class="form-input"
+              placeholder="เช่น 2"
+            />
+            <p class="muted">ถ้าเรทแพลนนั้นตั้งจำนวนห้องขาย จะใช้ตัวเลขนั้น ถ้าไม่ได้ตั้งจะใช้ห้องว่างจริง เหลือน้อยกว่าหรือเท่ากับค่านี้จะหยุดขายอัตโนมัติ</p>
+          </div>
+          <button class="btn btn-outline" type="button" :disabled="saving" @click="submitStopMin('set')">
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึกเกณฑ์ขั้นต่ำ' }}
+          </button>
+          <button class="btn btn-outline" type="button" :disabled="saving" @click="submitStopMin('clear')">
+            ล้างเกณฑ์ขั้นต่ำ
           </button>
 
           <p v-if="stopMessage" class="success-msg">{{ stopMessage }}</p>
