@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
@@ -26,6 +26,23 @@ const folio = ref(null)
 const folioLoading = ref(false)
 const chargeForm = ref({ trnCode: '', quantity: 1, amount: 0, remark: '' })
 const paymentForm = ref({ trnCode: '', amount: 0, company: '', remark: '' })
+// แผงด้านขวา: summary = รายละเอียด, checkin = ขั้นเช็คอิน, folio = ขั้นเช็คเอาต์
+const panel = ref('summary')
+const folioTab = ref('charge')
+const checkin = ref(null)
+const checkinLoading = ref(false)
+const checkinError = ref('')
+const checkinTried = ref(false)
+const checkinForm = ref({ fill: {}, paidBy: '', depositAmount: 0, reference: '', keyAmount: 0 })
+
+const isBooking = computed(() => ['booked', 'unconfirmed'].includes(detail.value?.kind)
+  && /^\d+$/.test(String(detail.value?.resvNo || '')))
+const isInhouse = computed(() => detail.value?.kind === 'inhouse' && detail.value?.source !== 'folio')
+const missingCount = computed(() => checkin.value?.missing?.length || 0)
+
+function baht(value) {
+  return (Number(value) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
+}
 
 const dayChoices = [7, 10, 31]
 const kindLabel = {
@@ -87,6 +104,13 @@ function weekday(ymd) {
   return ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'][new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
 }
 
+const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+
+function monthLabel(ymd, index) {
+  if (index !== 0 && String(ymd).slice(8) !== '01') return ''
+  return thaiMonths[Number(String(ymd).slice(5, 7)) - 1] || ''
+}
+
 function isWeekend(ymd) {
   const name = weekday(ymd)
   return name === 'ส.' || name === 'อา.'
@@ -132,6 +156,108 @@ function openDetail(room, day) {
     return
   }
   detail.value = { roomNo: room.roomNo, roomType: room.typeName, day, ...cell }
+  panel.value = 'summary'
+  folio.value = null
+  checkin.value = null
+  checkinError.value = ''
+  checkinTried.value = false
+  if (isBooking.value) loadCheckin()
+}
+
+function closeDrawer() {
+  if (saving.value) return
+  detail.value = null
+  folio.value = null
+  checkin.value = null
+  checkinError.value = ''
+  checkinLoading.value = false
+  panel.value = 'summary'
+}
+
+function onKeydown(event) {
+  if (event.key === 'Escape' && detail.value && !stopSale.value && !release.value) closeDrawer()
+}
+
+function fieldEmpty(field) {
+  const value = checkinForm.value.fill[field.key]
+  return field.type === 'number' ? !(Number(value) >= 1) : !String(value ?? '').trim()
+}
+
+async function loadCheckin() {
+  const target = detail.value
+  if (!target) return
+  checkinLoading.value = true
+  checkinError.value = ''
+  try {
+    const { data: body } = await api.get(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/checkin`, {
+      params: { resvNo: target.resvNo, roomNo: target.roomNo },
+    })
+    if (detail.value !== target) return
+    checkin.value = body
+    const fill = {}
+    ;(body.missing || []).forEach((field) => {
+      const known = field.type !== 'select' || !field.options?.length
+        || field.options.some((option) => option.code === field.value)
+      fill[field.key] = known ? (field.value ?? '') : ''
+    })
+    checkinForm.value = {
+      fill,
+      paidBy: body.paidBy?.value || '',
+      depositAmount: Number(body.paidBy?.amount) || 0,
+      reference: body.paidBy?.reference || '',
+      keyAmount: Number(body.paidBy?.keyAmount) || 0,
+    }
+  } catch (err) {
+    if (detail.value === target) checkinError.value = err?.response?.data?.error || 'โหลดข้อมูลการจองไม่สำเร็จ'
+  } finally {
+    if (detail.value === target) checkinLoading.value = false
+  }
+}
+
+function openCheckin() {
+  if (!checkin.value?.canCheckIn) return
+  checkinTried.value = false
+  panel.value = 'checkin'
+}
+
+async function confirmCheckin() {
+  if (!checkin.value || !detail.value || saving.value) return
+  const form = checkinForm.value
+  checkinTried.value = true
+  if ((checkin.value.missing || []).some(fieldEmpty)) return
+  if (Number(form.depositAmount) > 0 && !form.paidBy) return
+  const roomNo = detail.value.roomNo
+  saving.value = true
+  try {
+    const { data: body } = await api.post(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/checkin`, {
+      resvNo: detail.value.resvNo,
+      roomNo,
+      userId: userId(),
+      fill: form.fill,
+      paidBy: form.paidBy,
+      depositAmount: form.paidBy ? Number(form.depositAmount) || 0 : 0,
+      reference: form.reference,
+      keyAmount: Number(form.keyAmount) || 0,
+    })
+    await load()
+    saving.value = false
+    // เปิดห้องเดิมต่อในสถานะเข้าพัก จะได้ลงรายการต่อได้ทันที
+    const room = rooms.value.find((item) => item.roomNo === roomNo)
+    const today = data.value?.today
+    if (room && cellOf(room, today)?.kind === 'inhouse') openDetail(room, today)
+    else closeDrawer()
+    const warnings = body?.warnings || []
+    Swal.fire({
+      icon: warnings.length ? 'warning' : 'success',
+      title: `เช็คอินห้อง ${roomNo} แล้ว`,
+      text: warnings.join(' · '),
+      confirmButtonColor: '#001529',
+    })
+  } catch (err) {
+    Swal.fire({ icon: 'error', title: 'เช็คอินไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
+  } finally {
+    saving.value = false
+  }
 }
 
 function openStop(room, day) {
@@ -174,18 +300,23 @@ function syncChargeAmount() {
 async function openCheckout() {
   if (!detail.value || folioLoading.value) return
   if (detail.value.kind !== 'inhouse' || detail.value.source === 'folio') return
-  const roomNo = detail.value.roomNo
-  detail.value = null
+  const target = detail.value
+  const roomNo = target.roomNo
   folioLoading.value = true
   folio.value = null
+  folioTab.value = 'charge'
+  panel.value = 'folio'
   try {
     const { data: body } = await api.get(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/folio`, {
       params: { roomNo },
     })
+    if (detail.value !== target) return
     folio.value = body
+    if (Number(body.balance?.amount) > 0) folioTab.value = 'payment'
     chargeForm.value = { trnCode: body.charges?.[0]?.code || '', quantity: 1, amount: body.charges?.[0]?.price || 0, remark: '' }
     paymentForm.value = { trnCode: body.payments?.[0]?.code || '', amount: Math.max(0, Number(body.balance?.amount) || 0), company: body.companies?.[0]?.code || '', remark: '' }
   } catch (err) {
+    if (detail.value === target) panel.value = 'summary'
     Swal.fire({ icon: 'error', title: 'เปิดรายการห้องไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
   } finally {
     folioLoading.value = false
@@ -247,7 +378,8 @@ async function confirmCheckout() {
       userId: userId(),
     })
     const roomNo = folio.value.roomNo
-    folio.value = null
+    saving.value = false
+    closeDrawer()
     await load()
     Swal.fire({ icon: 'success', title: `เช็คเอาต์ห้อง ${roomNo} แล้ว`, confirmButtonColor: '#001529' })
   } catch (err) {
@@ -307,8 +439,15 @@ function toggleGroup(type) {
     : [...hidden.value, type]
 }
 
-onMounted(load)
-watch(() => props.hotelSlug, load)
+onMounted(() => {
+  load()
+  window.addEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+watch(() => props.hotelSlug, () => {
+  closeDrawer()
+  load()
+})
 </script>
 
 <template>
@@ -349,10 +488,11 @@ watch(() => props.hotelSlug, load)
             <th class="sticky-room">ห้อง</th>
             <th class="sticky-type">ประเภท</th>
             <th
-              v-for="day in dates"
+              v-for="(day, index) in dates"
               :key="day"
               :class="{ weekend: isWeekend(day), today: day === data?.today }"
             >
+              <small class="month">{{ monthLabel(day, index) }}</small>
               <b>{{ day.slice(8) }}</b>
               <small>{{ weekday(day) }}</small>
             </th>
@@ -371,6 +511,7 @@ watch(() => props.hotelSlug, load)
               v-for="(day, index) in dates"
               :key="room.roomNo + day"
               :class="[cellOf(room, day)?.kind || 'empty', { weekend: isWeekend(day), today: day === data?.today, start: staySpan(room, index)?.isStart }]"
+              :title="cellOf(room, day)?.guest || (day >= (data?.today || '') ? 'ว่าง' : '')"
               @click="cellOf(room, day) ? openDetail(room, day) : openStop(room, day)"
             >
               <span v-if="staySpan(room, index)?.isStart" class="guest" :style="spanStyle(room, index)">{{ cellOf(room, day).guest }}</span>
@@ -388,78 +529,185 @@ watch(() => props.hotelSlug, load)
       <span><i class="inhouse"></i>เข้าพักแล้ว</span>
       <span><i class="ooo"></i>ปิดใช้งาน</span>
       <span><i class="history"></i>ประวัติ folio</span>
-      <small>กดช่องที่มีชื่อเพื่อดูรายละเอียด · กดช่องว่างตั้งแต่วันนี้เพื่อปิดการขาย · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
+      <small>กดช่องที่มีชื่อเพื่อดูรายละเอียด เช็คอิน หรือเช็คเอาต์ · กดช่องว่างตั้งแต่วันนี้เพื่อปิดการขาย · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
     </footer>
 
-    <div v-if="detail" class="cal-modal" @click.self="detail = null">
-      <div class="sheet">
-        <h3>ห้อง {{ detail.roomNo }}</h3>
-        <p>{{ detail.roomType }}</p>
-        <dl>
-          <div><dt>วันที่</dt><dd>{{ formatDate(detail.day) }}</dd></div>
-          <div><dt>ชื่อ</dt><dd>{{ detail.guest || '-' }}</dd></div>
-          <div><dt>เลขจอง</dt><dd>{{ detail.resvNo || '-' }}</dd></div>
-          <div><dt>สถานะ</dt><dd>{{ kindLabel[detail.kind] || detail.kind }}</dd></div>
-          <div><dt>ที่มา</dt><dd>{{ detail.source === 'folio' ? 'Folio history' : 'Booking calendar' }}</dd></div>
-        </dl>
-        <p v-if="detail.source === 'folio' || detail.kind === 'history'" class="muted">ประวัติเข้าพัก เช็คเอาต์ไม่ได้</p>
-        <div class="actions">
-          <button v-if="detail.kind === 'inhouse' && detail.source !== 'folio'" type="button" class="primary" @click="openCheckout">เช็คเอาต์</button>
-          <button type="button" @click="detail = null">ปิด</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="folio || folioLoading" class="cal-modal" @click.self="folio = null">
-      <div class="sheet sheet-wide">
-        <p v-if="folioLoading" class="cal-loading">กำลังโหลดรายการในห้อง…</p>
-        <template v-else-if="folio">
-          <h3>ห้อง {{ folio.roomNo }} · โฟลิโอ {{ folio.folioNo }}</h3>
-          <p>ยอดคงเหลือ ฿{{ Number(folio.balance?.amount || 0).toLocaleString() }} · เซอร์วิส ฿{{ Number(folio.balance?.service || 0).toLocaleString() }} · ภาษี ฿{{ Number(folio.balance?.tax || 0).toLocaleString() }}</p>
-          <p v-if="!folio.canCheckout" class="muted">ลงรายการชำระให้ยอดเป็น 0 ก่อนกดเช็คเอาต์</p>
-          <div class="folio-lines">
-            <p v-if="!folio.lines?.length" class="muted">ยังไม่มีรายการในโฟลิโอ</p>
-            <div v-for="(line, index) in folio.lines" :key="index" class="folio-line">
-              <span>{{ line.name }} <small v-if="line.postedAt">{{ line.postedAt }}</small> <small v-if="line.qty">× {{ line.qty }}</small></span>
-              <b :class="{ pay: line.amount < 0 }">฿{{ Number(line.amount).toLocaleString() }}</b>
+    <Transition name="drawer">
+      <div v-if="detail" class="drawer-wrap" @click.self="closeDrawer">
+        <aside class="drawer" role="dialog" aria-modal="true" :aria-label="`ห้อง ${detail.roomNo}`">
+          <header class="drawer-head">
+            <div>
+              <span class="chip" :class="detail.kind">{{ kindLabel[detail.kind] || detail.kind }}</span>
+              <h3>ห้อง {{ detail.roomNo }}</h3>
+              <p>{{ detail.roomType }}</p>
             </div>
+            <button type="button" class="icon-btn" aria-label="ปิด" :disabled="saving" @click="closeDrawer">✕</button>
+          </header>
+
+          <div class="drawer-body">
+            <section class="card">
+              <p class="guest-name">{{ checkin?.guest || detail.guest || '-' }}</p>
+              <dl>
+                <div v-if="checkin?.arrival"><dt>เข้าพัก</dt><dd>{{ formatDate(checkin.arrival) }} → {{ formatDate(checkin.departure) }} · {{ checkin.nights }} คืน</dd></div>
+                <div v-else><dt>วันที่</dt><dd>{{ formatDate(detail.day) }}</dd></div>
+                <div><dt>เลขจอง</dt><dd>{{ detail.resvNo || '-' }}</dd></div>
+                <template v-if="checkin">
+                  <div><dt>ผู้เข้าพัก</dt><dd>ผู้ใหญ่ {{ checkin.adults }}<template v-if="checkin.children"> · เด็ก {{ checkin.children }}</template></dd></div>
+                  <div><dt>ราคาห้อง</dt><dd>฿{{ baht(checkin.rate) }} / คืน</dd></div>
+                  <div v-if="checkin.phone"><dt>โทร</dt><dd>{{ checkin.phone }}</dd></div>
+                  <div v-if="checkin.agent"><dt>เอเจนต์</dt><dd>{{ checkin.agent }}</dd></div>
+                  <div v-if="checkin.memo"><dt>หมายเหตุ</dt><dd>{{ checkin.memo }}</dd></div>
+                </template>
+              </dl>
+            </section>
+
+            <!-- รายละเอียด -->
+            <template v-if="panel === 'summary'">
+              <p v-if="detail.source === 'folio' || detail.kind === 'history'" class="note">ประวัติเข้าพักจาก folio history ดูได้อย่างเดียว</p>
+              <template v-else-if="isBooking">
+                <p v-if="checkinLoading" class="note">กำลังโหลดข้อมูลการจอง…</p>
+                <p v-else-if="checkinError" class="note warn">{{ checkinError }} <button type="button" class="link" @click="loadCheckin">ลองอีกครั้ง</button></p>
+                <p v-else-if="checkin?.blockReason" class="note warn">{{ checkin.blockReason }}</p>
+                <p v-else-if="checkin && missingCount" class="note">ยังขาดข้อมูล {{ missingCount }} รายการ ระบบจะให้กรอกเฉพาะส่วนที่ขาดตอนเช็คอิน</p>
+                <p v-else-if="checkin" class="note ok">ข้อมูลครบ พร้อมเช็คอิน</p>
+              </template>
+              <p v-else-if="isInhouse" class="note">กดเช็คเอาต์เพื่อดูรายการในห้อง โพสต์ค่าห้อง และรับชำระ ก่อนยืนยันเช็คเอาต์</p>
+            </template>
+
+            <!-- ขั้นเช็คอิน -->
+            <template v-else-if="panel === 'checkin' && checkin">
+              <section v-if="missingCount" class="card">
+                <h4>ข้อมูลที่ยังขาด <span class="count">{{ missingCount }}</span></h4>
+                <div class="fields">
+                  <label
+                    v-for="field in checkin.missing"
+                    :key="field.key"
+                    :class="{ wide: field.type === 'text', invalid: checkinTried && fieldEmpty(field) }"
+                  >
+                    <span>{{ field.label }}</span>
+                    <select v-if="field.type === 'select' && field.options?.length" v-model="checkinForm.fill[field.key]">
+                      <option value="" disabled>เลือก{{ field.label }}</option>
+                      <option v-for="option in field.options" :key="option.code" :value="option.code">{{ option.name }}</option>
+                    </select>
+                    <input v-else-if="field.type === 'number'" v-model.number="checkinForm.fill[field.key]" type="number" min="1" max="99" inputmode="numeric">
+                    <input v-else v-model.trim="checkinForm.fill[field.key]" type="text" :maxlength="field.size || 30">
+                    <small v-if="checkinTried && fieldEmpty(field)">กรอกช่องนี้ก่อนเช็คอิน</small>
+                  </label>
+                </div>
+              </section>
+              <p v-else class="note ok">ข้อมูลการจองครบแล้ว</p>
+
+              <section v-if="!checkin.paidBy?.locked" class="card">
+                <h4>Paid by <span class="optional">ไม่บังคับ</span></h4>
+                <div class="fields">
+                  <label class="wide">
+                    <span>วิธีชำระ</span>
+                    <select v-model="checkinForm.paidBy">
+                      <option value="">ยังไม่รับเงินตอนเช็คอิน</option>
+                      <option v-for="option in checkin.paidBy?.options" :key="option.code" :value="option.code">{{ option.name }}</option>
+                    </select>
+                  </label>
+                  <template v-if="checkinForm.paidBy">
+                    <label>
+                      <span>เงินมัดจำห้อง (บาท)</span>
+                      <input v-model.number="checkinForm.depositAmount" type="number" min="0" step="0.01" inputmode="decimal">
+                    </label>
+                    <label>
+                      <span>อ้างอิง</span>
+                      <input v-model.trim="checkinForm.reference" type="text" maxlength="16">
+                    </label>
+                  </template>
+                  <label v-if="checkin.paidBy?.keyCode" class="wide">
+                    <span>มัดจำคีย์การ์ด (บาท)</span>
+                    <input v-model.number="checkinForm.keyAmount" type="number" min="0" step="0.01" inputmode="decimal">
+                  </label>
+                </div>
+              </section>
+            </template>
+
+            <!-- ขั้นเช็คเอาต์ -->
+            <template v-else-if="panel === 'folio'">
+              <p v-if="folioLoading" class="note">กำลังโหลดรายการในห้อง…</p>
+              <template v-else-if="folio">
+                <section class="card balance" :class="{ settled: folio.canCheckout }">
+                  <span>ยอดคงเหลือ · โฟลิโอ {{ folio.folioNo }}</span>
+                  <b>฿{{ baht(folio.balance?.amount) }}</b>
+                  <small>เซอร์วิส ฿{{ baht(folio.balance?.service) }} · ภาษี ฿{{ baht(folio.balance?.tax) }}</small>
+                  <em>{{ folio.canCheckout ? 'ยอดเป็น 0 พร้อมเช็คเอาต์' : 'รับชำระให้ยอดเป็น 0 ก่อนเช็คเอาต์' }}</em>
+                </section>
+
+                <section class="card">
+                  <h4>รายการในห้อง <span class="count">{{ folio.lines?.length || 0 }}</span></h4>
+                  <p v-if="!folio.lines?.length" class="muted">ยังไม่มีรายการในโฟลิโอ</p>
+                  <ul v-else class="lines">
+                    <li v-for="(line, index) in folio.lines" :key="index">
+                      <span>
+                        {{ line.name }}<template v-if="line.qty > 1"> × {{ line.qty }}</template>
+                        <small>{{ line.postedAt }}<template v-if="line.remark && line.remark !== '/'"> · {{ line.remark }}</template></small>
+                      </span>
+                      <b :class="{ pay: line.amount < 0 }">฿{{ baht(line.amount) }}</b>
+                    </li>
+                  </ul>
+                </section>
+
+                <section class="card">
+                  <div class="tabs" role="tablist">
+                    <button type="button" role="tab" :aria-selected="folioTab === 'charge'" :class="{ on: folioTab === 'charge' }" @click="folioTab = 'charge'">โพสต์ค่าห้อง</button>
+                    <button type="button" role="tab" :aria-selected="folioTab === 'payment'" :class="{ on: folioTab === 'payment' }" @click="folioTab = 'payment'">รับชำระ</button>
+                  </div>
+                  <form v-if="folioTab === 'charge'" class="fields" @submit.prevent="postCharge">
+                    <label class="wide">
+                      <span>รายการ</span>
+                      <select v-model="chargeForm.trnCode" required @change="syncChargeAmount">
+                        <option v-for="item in folio.charges" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
+                      </select>
+                    </label>
+                    <label><span>จำนวน</span><input v-model.number="chargeForm.quantity" type="number" min="1" required inputmode="numeric" @change="syncChargeAmount"></label>
+                    <label><span>จำนวนเงิน (บาท)</span><input v-model.number="chargeForm.amount" type="number" min="0" step="0.01" required inputmode="decimal"></label>
+                    <label class="wide"><span>หมายเหตุ</span><input v-model="chargeForm.remark" maxlength="50"></label>
+                    <button type="submit" class="btn wide" :disabled="saving">โพสต์ค่าห้อง</button>
+                  </form>
+                  <form v-else class="fields" @submit.prevent="postPayment">
+                    <label class="wide">
+                      <span>วิธีชำระ</span>
+                      <select v-model="paymentForm.trnCode" required>
+                        <option v-for="item in folio.payments" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
+                      </select>
+                    </label>
+                    <label v-if="folio.companies?.length" class="wide">
+                      <span>บริษัท</span>
+                      <select v-model="paymentForm.company">
+                        <option value="">ไม่ระบุ</option>
+                        <option v-for="item in folio.companies" :key="item.code" :value="item.code">{{ item.name }}</option>
+                      </select>
+                    </label>
+                    <label><span>จำนวนเงิน (บาท)</span><input v-model.number="paymentForm.amount" type="number" min="0" step="0.01" required inputmode="decimal"></label>
+                    <label><span>หมายเหตุ</span><input v-model="paymentForm.remark" maxlength="50"></label>
+                    <button type="submit" class="btn wide" :disabled="saving">เพิ่มรายการชำระ</button>
+                  </form>
+                </section>
+              </template>
+            </template>
           </div>
-          <form class="folio-form" @submit.prevent="postCharge">
-            <h4>รายการค่าห้อง</h4>
-            <label>รายการ
-              <select v-model="chargeForm.trnCode" required @change="syncChargeAmount">
-                <option v-for="item in folio.charges" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
-              </select>
-            </label>
-            <label>จำนวน <input v-model.number="chargeForm.quantity" type="number" min="1" required @change="syncChargeAmount"></label>
-            <label>จำนวนเงิน <input v-model.number="chargeForm.amount" type="number" min="0" step="0.01" required></label>
-            <label>หมายเหตุ <input v-model="chargeForm.remark" maxlength="50"></label>
-            <button type="submit" class="primary" :disabled="saving">โพสต์ค่าห้อง</button>
-          </form>
-          <form class="folio-form" @submit.prevent="postPayment">
-            <h4>รายการชำระ</h4>
-            <label>วิธีชำระ
-              <select v-model="paymentForm.trnCode" required>
-                <option v-for="item in folio.payments" :key="item.code" :value="item.code">{{ item.code }} {{ item.name }}</option>
-              </select>
-            </label>
-            <label v-if="folio.companies?.length">บริษัท
-              <select v-model="paymentForm.company">
-                <option value="">ไม่ระบุ</option>
-                <option v-for="item in folio.companies" :key="item.code" :value="item.code">{{ item.name }}</option>
-              </select>
-            </label>
-            <label>จำนวนเงิน <input v-model.number="paymentForm.amount" type="number" min="0" step="0.01" required></label>
-            <label>หมายเหตุ <input v-model="paymentForm.remark" maxlength="50"></label>
-            <button type="submit" class="primary" :disabled="saving">เพิ่มรายการชำระ</button>
-          </form>
-          <div class="actions">
-            <button type="button" @click="folio = null" :disabled="saving">ปิด</button>
-            <button type="button" class="primary" :disabled="saving" @click="confirmCheckout">เช็คเอาต์</button>
-          </div>
-        </template>
+
+          <footer class="drawer-foot">
+            <template v-if="panel === 'summary'">
+              <button type="button" class="btn ghost" @click="closeDrawer">ปิด</button>
+              <button v-if="isBooking" type="button" class="btn primary" :disabled="!checkin?.canCheckIn" @click="openCheckin">เช็คอิน</button>
+              <button v-else-if="isInhouse" type="button" class="btn primary" @click="openCheckout">เช็คเอาต์</button>
+            </template>
+            <template v-else-if="panel === 'checkin'">
+              <button type="button" class="btn ghost" :disabled="saving" @click="panel = 'summary'">ย้อนกลับ</button>
+              <button type="button" class="btn primary" :disabled="saving" @click="confirmCheckin">{{ saving ? 'กำลังเช็คอิน…' : 'ยืนยันเช็คอิน' }}</button>
+            </template>
+            <template v-else>
+              <button type="button" class="btn ghost" :disabled="saving" @click="panel = 'summary'">ย้อนกลับ</button>
+              <button type="button" class="btn primary" :disabled="saving || !folio?.canCheckout" @click="confirmCheckout">ยืนยันเช็คเอาต์</button>
+            </template>
+          </footer>
+        </aside>
       </div>
-    </div>
+    </Transition>
 
     <div v-if="stopSale" class="cal-modal" @click.self="stopSale = null">
       <form class="sheet" @submit.prevent="confirmStop">
@@ -507,50 +755,110 @@ watch(() => props.hotelSlug, load)
 .cal-error { margin: 0; color: #9b2335; font-size: 13px; }
 .cal-scroll { overflow: auto; max-height: min(70vh, 720px); border: 1px solid #e1e8f2; border-radius: 12px; background: #fff; }
 table { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 12px; }
-th, td { border-bottom: 1px solid #eef2f7; border-right: 1px solid #f3f6fb; height: 42px; min-width: 72px; padding: 0 6px; white-space: nowrap; position: relative; }
-thead th { position: sticky; top: 0; background: #f7fafc; z-index: 2; text-align: center; }
+th, td { border-bottom: 1px solid #e6edf5; border-right: 1px solid #e6edf5; height: 46px; min-width: 92px; padding: 0 4px; white-space: nowrap; position: relative; }
+thead th { position: sticky; top: 0; background: #f7fafc; z-index: 2; text-align: center; height: 52px; }
 .sticky-room, .sticky-type { position: sticky; background: #fff; z-index: 3; }
-.sticky-room { left: 0; min-width: 72px; }
-.sticky-type { left: 72px; min-width: 88px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.sticky-room { left: 0; min-width: 64px; font-variant-numeric: tabular-nums; }
+.sticky-type { left: 64px; min-width: 72px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; color: #5c6f86; }
 thead .sticky-room, thead .sticky-type { z-index: 4; background: #f7fafc; }
-th b { display: block; font-size: 13px; }
-th small { color: #6d7f96; font-weight: 500; }
-.weekend { background: #f8fafc; }
-.today { box-shadow: inset 0 -2px 0 #001529; }
-td { cursor: pointer; }
+th b { display: block; font-size: 13px; line-height: 1.1; }
+th small { display: block; color: #6d7f96; font-weight: 500; line-height: 1.1; }
+th small.month { min-height: 12px; color: #0a5a96; font-weight: 700; }
+tbody tr:nth-child(even) td.empty { background: #fbfcfe; }
+.weekend { background: #f4f7fb; }
+thead th.today { background: #e7f3ff; }
+td.today { box-shadow: inset 3px 0 0 #0a5a96; }
+thead th.today { box-shadow: inset 0 -3px 0 #0a5a96; }
+td { cursor: pointer; overflow: visible; }
 td.start { z-index: 1; }
-td.booked { background: rgba(240, 255, 105, .75); }
-td.unconfirmed { background: rgba(86, 184, 249, .45); }
-td.inhouse { background: rgba(255, 134, 215, .45); }
-td.ooo { background: rgba(255, 0, 17, .28); }
-td.history { background: rgba(201, 162, 39, .45); }
-.guest { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); overflow: hidden; text-overflow: ellipsis; font-weight: 650; pointer-events: none; z-index: 2; }
+td.booked { background: #f4f58a; }
+td.unconfirmed { background: #b9dcff; }
+td.inhouse { background: #ffc4ea; }
+td.ooo { background: #ffb3b8; }
+td.history { background: #ead48a; }
+.guest { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 700; color: #142033; pointer-events: none; z-index: 2; }
 .group-row th { background: #f4f7fb; text-align: left; }
 .group-row button { border: 0; background: transparent; font: inherit; font-weight: 650; cursor: pointer; }
 .cal-empty, .cal-loading { padding: 28px; text-align: center; color: #6d7f96; }
 .cal-legend { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-size: 12px; }
 .cal-legend i { width: 14px; height: 14px; display: inline-block; margin-right: 4px; vertical-align: -2px; }
-.cal-legend .booked { background: rgba(240, 255, 105, .95); }
-.cal-legend .unconfirmed { background: rgba(86, 184, 249, .8); }
-.cal-legend .inhouse { background: rgba(255, 134, 215, .8); }
-.cal-legend .ooo { background: rgba(255, 0, 17, .55); }
-.cal-legend .history { background: rgba(201, 162, 39, .9); }
+.cal-legend .booked { background: #f4f58a; }
+.cal-legend .unconfirmed { background: #b9dcff; }
+.cal-legend .inhouse { background: #ffc4ea; }
+.cal-legend .ooo { background: #ffb3b8; }
+.cal-legend .history { background: #ead48a; }
 .cal-modal { position: fixed; inset: 0; background: rgba(0, 21, 41, .45); display: grid; place-items: center; z-index: 80; padding: 16px; }
 .sheet { width: min(420px, 100%); background: #fff; border-radius: 16px; padding: 18px; display: grid; gap: 8px; max-height: min(92vh, 860px); overflow: auto; }
-.sheet-wide { width: min(640px, 100%); }
-.sheet h3, .sheet h4, .sheet p { margin: 0; }
-.folio-lines { display: grid; gap: 6px; max-height: 220px; overflow: auto; border: 1px solid #e1e8f2; border-radius: 10px; padding: 8px; }
-.folio-line { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
-.folio-line .pay { color: #0a7a32; }
-.folio-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-top: 1px solid #eef2f7; padding-top: 8px; }
-.folio-form h4, .folio-form button { grid-column: 1 / -1; }
-.folio-form h4 { font-size: 14px; }
-.folio-form button { justify-self: start; }
-.muted { color: #6d7f96; font-size: 13px; }
-.sheet dl { margin: 0; display: grid; gap: 6px; }
-.sheet dl div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
-.sheet dt { color: #6d7f96; }
+.sheet h3, .sheet p { margin: 0; }
+.muted { margin: 0; color: #6d7f96; font-size: 13px; }
 .sheet label { display: grid; gap: 4px; font-size: 12px; color: #5c6f86; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
-.actions button.primary, .folio-form button.primary, .actions button[type="submit"], .cal-error button { background: #001529; color: #fff; border-color: #001529; }
+.actions button[type="submit"], .cal-error button { background: #001529; color: #fff; border-color: #001529; }
+
+/* แผงห้องด้านขวา: รายละเอียด เช็คอิน เช็คเอาต์ จบในที่เดียว */
+.drawer-wrap { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: flex-end; background: rgba(0, 21, 41, .32); }
+.drawer { width: min(460px, 100%); height: 100%; display: flex; flex-direction: column; background: #f5f8fc; color: #142033; box-shadow: -12px 0 32px rgba(0, 21, 41, .16); }
+.drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 20px 14px; background: #fff; border-bottom: 1px solid #e1e8f2; }
+.drawer-head h3 { margin: 8px 0 0; font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.drawer-head p { margin: 2px 0 0; color: #6d7f96; font-size: 13px; }
+.icon-btn { width: 36px; height: 36px; flex: none; border: 1px solid #d4e0ee; border-radius: 10px; background: #fff; color: #44566c; font-size: 14px; cursor: pointer; }
+.icon-btn:hover { background: #f1f5fa; }
+.chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #142033; }
+.chip.booked { background: #f4f58a; }
+.chip.unconfirmed { background: #b9dcff; }
+.chip.inhouse { background: #ffc4ea; }
+.chip.history { background: #ead48a; }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: #fff; border: 1px solid #e1e8f2; border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
+.card h4 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.count { background: #e7eef8; color: #0a5a96; border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+.optional { color: #6d7f96; font-size: 12px; font-weight: 500; }
+.guest-name { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.card dl { margin: 0; display: grid; gap: 7px; }
+.card dl div { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
+.card dt { color: #6d7f96; flex: none; }
+.card dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.note { margin: 0; padding: 10px 14px; border-radius: 12px; background: #eaf1f9; color: #2c4460; font-size: 13px; line-height: 1.5; }
+.note.warn { background: #fff3e0; color: #8a4b00; }
+.note.ok { background: #e6f6ec; color: #0c6b34; }
+.link { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.fields .wide { grid-column: 1 / -1; }
+.fields label { display: grid; gap: 5px; align-content: start; font-size: 12px; color: #5c6f86; min-width: 0; }
+.fields input, .fields select { width: 100%; min-width: 0; box-sizing: border-box; height: 42px; padding: 0 12px; border: 1px solid #cfdbe9; border-radius: 10px; background: #fff; color: #142033; font: inherit; font-size: 14px; }
+.fields input:focus-visible, .fields select:focus-visible, .btn:focus-visible, .icon-btn:focus-visible, .tabs button:focus-visible { outline: 2px solid #0a5a96; outline-offset: 2px; }
+.fields .invalid input, .fields .invalid select { border-color: #c62828; background: #fff7f7; }
+.fields label small { color: #c62828; }
+.balance { gap: 2px; background: #fff8ec; border-color: #f3ddb5; }
+.balance.settled { background: #e9f7ee; border-color: #bfe3cb; }
+.balance span, .balance small { color: #5c6f86; font-size: 12px; }
+.balance b { font-size: 30px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.balance em { margin-top: 4px; font-style: normal; font-size: 13px; font-weight: 600; color: #8a4b00; }
+.balance.settled em { color: #0c6b34; }
+.lines { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.lines li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid #eef2f7; font-size: 14px; }
+.lines li:first-child { border-top: 0; padding-top: 0; }
+.lines span { min-width: 0; overflow-wrap: anywhere; }
+.lines small { display: block; color: #8494a8; font-size: 11px; }
+.lines b { flex: none; font-variant-numeric: tabular-nums; }
+.lines .pay { color: #0c6b34; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: #eef2f7; }
+.tabs button { height: 36px; border: 0; border-radius: 9px; background: transparent; color: #44566c; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.tabs button.on { background: #fff; color: #142033; box-shadow: 0 1px 3px rgba(0, 21, 41, .14); }
+.btn { height: 44px; padding: 0 18px; border: 1px solid #001529; border-radius: 11px; background: #001529; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn.ghost { background: #fff; color: #142033; border-color: #cfdbe9; }
+.btn:disabled, .icon-btn:disabled { opacity: .45; cursor: not-allowed; }
+.drawer-foot { display: flex; gap: 10px; padding: 14px 20px; background: #fff; border-top: 1px solid #e1e8f2; }
+.drawer-foot .btn { flex: 1; }
+.drawer-foot .btn.ghost { flex: 0 0 auto; }
+.drawer-enter-active, .drawer-leave-active { transition: opacity .18s ease; }
+.drawer-enter-active .drawer, .drawer-leave-active .drawer { transition: transform .18s ease; }
+.drawer-enter-from, .drawer-leave-to { opacity: 0; }
+.drawer-enter-from .drawer, .drawer-leave-to .drawer { transform: translateX(24px); }
+@media (prefers-reduced-motion: reduce) {
+  .drawer-enter-active, .drawer-leave-active, .drawer-enter-active .drawer, .drawer-leave-active .drawer { transition: none; }
+}
+@media (max-width: 520px) {
+  .drawer-head, .drawer-body, .drawer-foot { padding-left: 14px; padding-right: 14px; }
+}
 </style>

@@ -13,6 +13,7 @@ export const useFeaturesStore = defineStore('features', {
     showChat:    (state) => Boolean(state.loadedForSlug) && state.flags.nav_chat !== false,
     showRoomsTab: (state) => !state.loadedForSlug || state.flags.tab_rooms !== false,
     showKioskTab: (state) => Boolean(state.loadedForSlug) && state.flags.tab_kiosk !== false,
+    pmsCalendarEnabled: (state) => Boolean(state.loadedForSlug) && state.flags.feat_pms_calendar !== false,
     showSettingsTab: (state) => !state.loadedForSlug || state.flags.tab_settings !== false,
     paymentEnabled: (state) => !state.loadedForSlug || state.flags.feat_payment_slip !== false,
     couponsEnabled: (state) => !state.loadedForSlug || state.flags.feat_coupons !== false,

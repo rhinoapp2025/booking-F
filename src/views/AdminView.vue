@@ -40,8 +40,10 @@ const BOOKING_LIST_TABS = [
   { key: 'checked_in', label: 'การจองที่เช็คอินแล้ว' },
   { key: 'cancelled', label: 'การจองที่ยกเลิกแล้ว' },
 ]
+// ปฏิทินจอง: ต้องต่อ PMS และแพลตฟอร์มเปิดให้สาขานี้
+const showPmsCalendar = computed(() => useKioskRooms.value && features.pmsCalendarEnabled)
 const bookingTabs = computed(() => (
-  useKioskRooms.value
+  showPmsCalendar.value
     ? [...BOOKING_LIST_TABS, { key: 'calendar', label: 'ปฏิทินจอง' }]
     : BOOKING_LIST_TABS
 ))
@@ -1436,7 +1438,7 @@ watch(showKioskTab, (on) => {
   loadRooms({ silent: true })
 })
 
-watch(useKioskRooms, (on) => {
+watch(showPmsCalendar, (on) => {
   if (!on && bookingListTab.value === 'calendar') {
     bookingListTab.value = 'all'
     if (tab.value === 'bookings') loadBookings()
