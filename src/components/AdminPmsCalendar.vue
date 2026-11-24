@@ -12,8 +12,11 @@ const auth = useAuthStore()
 const loading = ref(false)
 const errorText = ref('')
 const data = ref(null)
-const days = ref(10)
+const MAX_DAYS = 90
+const DAYS_KEY = 'booking-admin-pms-calendar-days'
+const days = ref(savedDays())
 const bgn = ref(bangkokToday())
+const scroller = ref(null)
 const roomSearch = ref('')
 const typeFilter = ref('')
 const grouped = ref(false)
@@ -44,7 +47,31 @@ function baht(value) {
   return (Number(value) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
 }
 
-const dayChoices = [7, 10, 31]
+const dayChoices = [7, 10, 31, 60]
+
+function clampDays(value) {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n) || n < 1) return 0
+  return Math.min(MAX_DAYS, n)
+}
+
+// จำจำนวนวันที่เลือกไว้ในเครื่องนี้ เปิดปฏิทินครั้งหน้าจะได้ช่วงเดิม
+function savedDays() {
+  try {
+    return clampDays(localStorage.getItem(DAYS_KEY)) || 10
+  } catch {
+    return 10
+  }
+}
+
+function applyDays(value, input) {
+  const next = clampDays(value) || days.value
+  if (input) input.value = String(next)
+  if (next === days.value) return
+  days.value = next
+  try { localStorage.setItem(DAYS_KEY, String(next)) } catch { /* ignore */ }
+  load()
+}
 const kindLabel = {
   booked: 'จองแล้ว',
   unconfirmed: 'รอยืนยัน',
@@ -125,22 +152,83 @@ function sameStay(a, b) {
   return a.guest === b.guest && a.resvNo === b.resvNo && a.kind === b.kind && a.source === b.source
 }
 
-function staySpan(room, index) {
-  const day = dates.value[index]
-  const cell = cellOf(room, day)
-  if (!cell) return null
-  let start = index
-  while (start > 0 && sameStay(cell, cellOf(room, dates.value[start - 1]))) start -= 1
-  let end = index
-  while (end < dates.value.length - 1 && sameStay(cell, cellOf(room, dates.value[end + 1]))) end += 1
-  return { start, end, cell, isStart: start === index }
+const weekendDays = computed(() => new Set(dates.value.filter(isWeekend)))
+const hasPast = computed(() => Boolean(dates.value.length) && dates.value[0] < (data.value?.today || ''))
+
+// แถวของแต่ละห้อง: คืนที่ติดกันของการเข้าพักเดียวกันรวมเป็นแถบเดียว ช่องว่างเป็นช่องละคืน
+// คำนวณครั้งเดียวต่อการโหลด ไม่ต้องไล่หาขอบเขตซ้ำทุกช่องตอนวาด
+const segments = computed(() => {
+  const list = dates.value
+  const todayIndex = list.indexOf(data.value?.today || '')
+  const map = new Map()
+  rooms.value.forEach((room) => {
+    const row = []
+    let i = 0
+    while (i < list.length) {
+      const cell = cellOf(room, list[i])
+      let end = i
+      if (cell) {
+        while (end < list.length - 1 && sameStay(cell, cellOf(room, list[end + 1]))) end += 1
+      }
+      const span = end - i + 1
+      row.push({
+        day: list[i],
+        index: i,
+        span,
+        cell,
+        weekend: !cell && weekendDays.value.has(list[i]),
+        // ตำแหน่งเส้นวันนี้ภายในแถบ (ค่าว่าง = วันนี้ไม่อยู่ในแถบนี้)
+        todayLeft: todayIndex >= i && todayIndex <= end ? `${((todayIndex - i) / span) * 100}%` : '',
+      })
+      i = end + 1
+    }
+    map.set(room.roomNo, row)
+  })
+  return map
+})
+
+// ห้องว่างต่อวัน นับจากห้องที่กรองอยู่ เฉพาะวันนี้เป็นต้นไป (ย้อนหลังเป็นประวัติ ไม่ใช่ห้องขาย)
+const freeByDay = computed(() => {
+  const today = data.value?.today || ''
+  return dates.value.map((day) => (
+    day < today ? null : visibleRooms.value.reduce((n, room) => n + (cellOf(room, day) ? 0 : 1), 0)
+  ))
+})
+const showFree = computed(() => Boolean(data.value) && !data.value.forecastError
+  && freeByDay.value.some((n) => n !== null))
+
+// กดแถบหลายคืน: หาคืนที่กดจากตำแหน่งเมาส์ในแถบ
+function dayOfClick(seg, event) {
+  if (seg.span === 1) return seg.day
+  const box = event.currentTarget.getBoundingClientRect()
+  const offset = Math.floor(((event.clientX - box.left) / box.width) * seg.span)
+  return dates.value[seg.index + Math.min(seg.span - 1, Math.max(0, offset))]
 }
 
-function spanStyle(room, index) {
-  const span = staySpan(room, index)
-  if (!span?.isStart) return null
-  const nights = span.end - span.start + 1
-  return { width: `calc(${nights * 100}% - 10px)` }
+function onCellClick(room, seg, event) {
+  if (seg.cell) openDetail(room, dayOfClick(seg, event))
+  else openStop(room, seg.day)
+}
+
+function shiftRange(direction) {
+  bgn.value = addDays(bgn.value || bangkokToday(), direction * Number(days.value))
+  load()
+}
+
+// วันนี้อยู่ในช่วงที่โหลดแล้ว = เลื่อนไปหา ไม่อยู่ = โหลดช่วงใหม่ที่เริ่มวันนี้
+function goToday() {
+  const today = data.value?.today || bangkokToday()
+  const head = scroller.value?.querySelector('thead th.today')
+  if (!dates.value.includes(today) || !head) {
+    bgn.value = today
+    load()
+    return
+  }
+  const box = scroller.value
+  const sticky = box.querySelector('thead .sticky-room')?.offsetWidth || 0
+  const left = box.scrollLeft + head.getBoundingClientRect().left - box.getBoundingClientRect().left - sticky
+  const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  box.scrollTo({ left: Math.max(0, left), behavior: calm ? 'auto' : 'smooth' })
 }
 
 function openDetail(room, day) {
@@ -454,17 +542,44 @@ watch(() => props.hotelSlug, () => {
   <section class="pms-cal" aria-label="ปฏิทินการจอง">
     <div class="cal-toolbar">
       <div>
-        <h2>ปฏิทินการจอง <span>{{ visibleRooms.length }}</span></h2>
-        <p>{{ rangeLabel }} · เริ่มวันนี้ · ก่อนวันนี้มาจาก folio history</p>
+        <h2>ปฏิทินการจอง <span>{{ visibleRooms.length }} ห้อง</span></h2>
+        <p>{{ rangeLabel }}<template v-if="dates.length"> · {{ dates.length }} วัน</template><template v-if="hasPast"> · ก่อนวันนี้มาจาก folio history</template></p>
       </div>
-      <label>ระยะเวลา
-        <select v-model.number="days" :disabled="loading" @change="load">
-          <option v-for="n in dayChoices" :key="n" :value="n">{{ n }} วัน</option>
-        </select>
-      </label>
-      <label>ตั้งแต่วันที่
-        <input v-model="bgn" type="date" :disabled="loading" @change="load">
-      </label>
+      <div class="days-field">
+        <label for="pmsCalDays">จำนวนวัน (1–{{ MAX_DAYS }})</label>
+        <div class="days-row">
+          <input
+            id="pmsCalDays"
+            :value="days"
+            type="number"
+            min="1"
+            :max="MAX_DAYS"
+            step="1"
+            inputmode="numeric"
+            :disabled="loading"
+            @change="applyDays($event.target.value, $event.target)"
+          >
+          <button
+            v-for="n in dayChoices"
+            :key="n"
+            type="button"
+            :class="{ on: days === n }"
+            :disabled="loading"
+            :aria-pressed="days === n"
+            :title="`ดู ${n} วัน`"
+            @click="applyDays(n)"
+          >{{ n }}</button>
+        </div>
+      </div>
+      <div class="days-field">
+        <label for="pmsCalBgn">ตั้งแต่วันที่</label>
+        <div class="days-row">
+          <button type="button" aria-label="ช่วงก่อนหน้า" title="ช่วงก่อนหน้า" :disabled="loading" @click="shiftRange(-1)">‹</button>
+          <input id="pmsCalBgn" v-model="bgn" type="date" :disabled="loading" @change="load">
+          <button type="button" aria-label="ช่วงถัดไป" title="ช่วงถัดไป" :disabled="loading" @click="shiftRange(1)">›</button>
+          <button type="button" :disabled="loading" @click="goToday">วันนี้</button>
+        </div>
+      </div>
       <label class="grow">ค้นหาห้อง
         <input v-model.trim="roomSearch" type="search" placeholder="เลขห้อง / ประเภท">
       </label>
@@ -481,40 +596,53 @@ watch(() => props.hotelSlug, () => {
     <p v-if="data?.forecastError" class="cal-error">ตารางวันนี้ไปข้างหน้า: {{ data.forecastError }}</p>
     <p v-if="data?.historyError" class="cal-error">ปฏิทินย้อนหลัง: {{ data.historyError }}</p>
 
-    <div class="cal-scroll" :aria-busy="loading">
+    <div ref="scroller" class="cal-scroll" :aria-busy="loading">
       <table v-if="visibleRooms.length">
         <thead>
-          <tr>
+          <tr class="head-days">
             <th class="sticky-room">ห้อง</th>
-            <th class="sticky-type">ประเภท</th>
             <th
               v-for="(day, index) in dates"
               :key="day"
-              :class="{ weekend: isWeekend(day), today: day === data?.today }"
+              :class="{ weekend: weekendDays.has(day), today: day === data?.today }"
             >
               <small class="month">{{ monthLabel(day, index) }}</small>
               <b>{{ day.slice(8) }}</b>
               <small>{{ weekday(day) }}</small>
             </th>
           </tr>
+          <tr v-if="showFree" class="head-free">
+            <th class="sticky-room">ห้องว่าง</th>
+            <th
+              v-for="(day, index) in dates"
+              :key="day"
+              :class="{ today: day === data?.today, full: freeByDay[index] === 0 }"
+            >{{ freeByDay[index] === null ? '' : freeByDay[index] }}</th>
+          </tr>
         </thead>
         <tbody v-for="group in groups" :key="group.type">
           <tr v-if="grouped" class="group-row">
-            <th :colspan="dates.length + 2">
+            <th :colspan="dates.length + 1">
               <button type="button" @click="toggleGroup(group.type)">{{ hidden.includes(group.type) ? '▸' : '▾' }} {{ group.type }} · {{ group.rooms.length }}</button>
             </th>
           </tr>
           <tr v-for="room in group.rooms" v-show="!grouped || !hidden.includes(group.type)" :key="room.roomNo">
-            <th class="sticky-room">{{ room.roomNo }}</th>
-            <td class="sticky-type" :title="room.typeName">{{ (room.typeName || '').split('/')[0] }}</td>
+            <th class="sticky-room" :title="room.typeName">
+              <b>{{ room.roomNo }}</b>
+              <small>{{ (room.typeName || '').split('/')[0] }}</small>
+            </th>
             <td
-              v-for="(day, index) in dates"
-              :key="room.roomNo + day"
-              :class="[cellOf(room, day)?.kind || 'empty', { weekend: isWeekend(day), today: day === data?.today, start: staySpan(room, index)?.isStart }]"
-              :title="cellOf(room, day)?.guest || (day >= (data?.today || '') ? 'ว่าง' : '')"
-              @click="cellOf(room, day) ? openDetail(room, day) : openStop(room, day)"
+              v-for="seg in segments.get(room.roomNo)"
+              :key="seg.day"
+              :colspan="seg.span"
+              :class="[seg.cell ? 'stay' : 'empty', { weekend: seg.weekend }]"
+              :title="seg.cell ? seg.cell.guest : (seg.day >= (data?.today || '') ? 'ว่าง' : '')"
+              @click="onCellClick(room, seg, $event)"
             >
-              <span v-if="staySpan(room, index)?.isStart" class="guest" :style="spanStyle(room, index)">{{ cellOf(room, day).guest }}</span>
+              <div v-if="seg.cell" class="bar" :class="seg.cell.kind">
+                <span class="guest">{{ seg.cell.guest }}</span>
+              </div>
+              <i v-if="seg.todayLeft" class="today-line" :style="{ left: seg.todayLeft }"></i>
             </td>
           </tr>
         </tbody>
@@ -749,36 +877,52 @@ watch(() => props.hotelSlug, () => {
   height: 36px; border: 1px solid #d4e0ee; border-radius: 7px; background: #fff; padding: 0 8px; font: inherit;
 }
 .sheet input, .sheet select { width: 100%; box-sizing: border-box; }
+.days-field { display: flex; flex-direction: column; gap: 4px; }
+.days-row { display: flex; gap: 4px; }
+.days-row input[type="number"] { width: 64px; text-align: center; font-weight: 600; }
+.days-row button { min-width: 36px; padding: 0 6px; color: #5c6f86; cursor: pointer; }
+.days-row button:disabled { cursor: default; opacity: .6; }
 .cal-toolbar .grow { flex: 1; min-width: 140px; }
 .cal-toolbar .grow input { width: 100%; }
 .cal-toolbar button.on { background: #001529; color: #fff; }
 .cal-error { margin: 0; color: #9b2335; font-size: 13px; }
-.cal-scroll { overflow: auto; max-height: min(70vh, 720px); border: 1px solid #e1e8f2; border-radius: 12px; background: #fff; }
+/* ตารางสูงเกือบเต็มจอ เลื่อนหน้าลงครั้งเดียวก็เห็นห้องได้มากที่สุด */
+.cal-scroll { --room-w: 84px; overflow: auto; max-height: max(360px, calc(100vh - 150px)); max-height: max(360px, calc(100dvh - 150px)); border: 1px solid #e1e8f2; border-radius: 12px; background: #fff; }
 table { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 12px; }
-th, td { border-bottom: 1px solid #e6edf5; border-right: 1px solid #e6edf5; height: 46px; min-width: 92px; padding: 0 4px; white-space: nowrap; position: relative; }
-thead th { position: sticky; top: 0; background: #f7fafc; z-index: 2; text-align: center; height: 52px; }
-.sticky-room, .sticky-type { position: sticky; background: #fff; z-index: 3; }
-.sticky-room { left: 0; min-width: 64px; font-variant-numeric: tabular-nums; }
-.sticky-type { left: 64px; min-width: 72px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; color: #5c6f86; }
-thead .sticky-room, thead .sticky-type { z-index: 4; background: #f7fafc; }
-th b { display: block; font-size: 13px; line-height: 1.1; }
-th small { display: block; color: #6d7f96; font-weight: 500; line-height: 1.1; }
-th small.month { min-height: 12px; color: #0a5a96; font-weight: 700; }
-tbody tr:nth-child(even) td.empty { background: #fbfcfe; }
-.weekend { background: #f4f7fb; }
-thead th.today { background: #e7f3ff; }
-td.today { box-shadow: inset 3px 0 0 #0a5a96; }
-thead th.today { box-shadow: inset 0 -3px 0 #0a5a96; }
-td { cursor: pointer; overflow: visible; }
-td.start { z-index: 1; }
-td.booked { background: #f4f58a; }
-td.unconfirmed { background: #b9dcff; }
-td.inhouse { background: #ffc4ea; }
-td.ooo { background: #ffb3b8; }
-td.history { background: #ead48a; }
-.guest { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 700; color: #142033; pointer-events: none; z-index: 2; }
-.group-row th { background: #f4f7fb; text-align: left; }
-.group-row button { border: 0; background: transparent; font: inherit; font-weight: 650; cursor: pointer; }
+th, td { border-bottom: 1px solid #e6edf5; border-right: 1px solid #eef2f7; height: 36px; min-width: 92px; padding: 0; white-space: nowrap; position: relative; }
+thead { position: sticky; top: 0; z-index: 3; }
+thead th { background: #f7fafc; text-align: center; }
+.head-days th { height: 46px; }
+.head-free th { height: 24px; border-bottom-color: #d4e0ee; color: #44566c; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.head-free th.full { color: #c62828; }
+.head-free th.today { background: #e7f3ff; }
+.sticky-room { position: sticky; left: 0; z-index: 2; width: var(--room-w); min-width: var(--room-w); max-width: var(--room-w); box-sizing: border-box; padding: 0 8px; background: #fff; border-right-color: #d4e0ee; text-align: left; }
+thead .sticky-room { background: #f7fafc; color: #5c6f86; font-size: 11px; font-weight: 600; }
+tbody .sticky-room b { display: block; font-size: 13px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+tbody .sticky-room small { display: block; max-width: calc(var(--room-w) - 16px); overflow: hidden; text-overflow: ellipsis; color: #6d7f96; font-size: 10px; font-weight: 500; line-height: 1.15; }
+tbody tr:hover .sticky-room { background: #eaf2fb; }
+.head-days th b { display: block; font-size: 13px; line-height: 1.1; }
+.head-days th small { display: block; color: #6d7f96; font-weight: 500; line-height: 1.1; }
+.head-days th small.month { min-height: 12px; color: #0a5a96; font-weight: 700; }
+.head-days th.weekend { background: #eef2f8; }
+.head-days th.today { background: #0a5a96; color: #fff; }
+.head-days th.today small { color: #dbeafb; }
+td { cursor: pointer; }
+td.empty.weekend { background: #f4f7fb; }
+td.empty:hover { background: #e9f2fc; }
+/* หนึ่งแถบต่อหนึ่งการเข้าพัก มีขอบและช่องไฟ การจองที่ติดกันจึงไม่กลืนกัน */
+.bar { position: absolute; inset: 3px 2px; display: flex; align-items: center; border: 1px solid transparent; border-radius: 6px; }
+.bar.booked { background: #f4f58a; border-color: #d6d74c; }
+.bar.unconfirmed { background: #b9dcff; border-color: #86bdf0; }
+.bar.inhouse { background: #ffc4ea; border-color: #ee8fcb; }
+.bar.ooo { background: #ffb3b8; border-color: #ec7f88; }
+.bar.history { background: #ead48a; border-color: #cdb150; }
+td.stay:hover .bar { box-shadow: 0 0 0 2px rgba(10, 90, 150, .28); }
+/* ชื่อเกาะขอบซ้ายของจอเมื่อเลื่อน แถบที่เริ่มก่อนช่วงที่เห็นจึงยังอ่านชื่อได้ */
+.guest { position: sticky; left: calc(var(--room-w) + 4px); min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 7px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 700; color: #142033; }
+.today-line { position: absolute; top: 0; bottom: -1px; width: 2px; margin-left: -1px; background: #0a5a96; pointer-events: none; z-index: 1; }
+.group-row th { height: 30px; padding: 0 8px; background: #f4f7fb; text-align: left; }
+.group-row button { position: sticky; left: 8px; border: 0; background: transparent; padding: 0; font: inherit; font-weight: 650; cursor: pointer; }
 .cal-empty, .cal-loading { padding: 28px; text-align: center; color: #6d7f96; }
 .cal-legend { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-size: 12px; }
 .cal-legend i { width: 14px; height: 14px; display: inline-block; margin-right: 4px; vertical-align: -2px; }
