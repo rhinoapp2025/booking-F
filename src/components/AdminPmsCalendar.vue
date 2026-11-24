@@ -108,7 +108,12 @@ const kindLabel = {
   inhouse: 'เข้าพักแล้ว',
   ooo: 'ปิดใช้งาน',
   history: 'ประวัติเข้าพัก',
+  new: 'จองใหม่',
 }
+const newBooking = ref(null)
+const newBookingLoading = ref(false)
+const newForm = ref({})
+const newTried = ref(false)
 
 function bangkokToday() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
@@ -236,7 +241,8 @@ function indexAtPoint(seg, box, clientX) {
 
 function onCellClick(room, seg, event) {
   if (!seg.cell) {
-    openStop(room, seg.day)
+    // ช่องว่างตั้งแต่วันนี้ = จองใหม่ (ปิดการขายยังมีในฟอร์มจองใหม่)
+    if (seg.day >= (data.value?.today || '')) openNewBooking(room, seg.day)
     return
   }
   const index = indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX)
@@ -419,7 +425,119 @@ function closeDrawer() {
   checkin.value = null
   checkinError.value = ''
   checkinLoading.value = false
+  newBooking.value = null
+  newBookingLoading.value = false
+  newTried.value = false
   panel.value = 'summary'
+}
+
+async function openNewBooking(room, day) {
+  if (saving.value || newBookingLoading.value) return
+  if (day < (data.value?.today || '')) return
+  detail.value = {
+    roomNo: room.roomNo,
+    roomType: room.typeName,
+    day,
+    kind: 'new',
+    guest: '',
+    resvNo: '',
+  }
+  panel.value = 'new'
+  newBooking.value = null
+  newBookingLoading.value = true
+  newTried.value = false
+  newForm.value = {}
+  try {
+    const { data: body } = await api.get(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/new-booking`, {
+      params: { roomNo: room.roomNo, arrival: day },
+    })
+    newBooking.value = body
+    const form = {}
+    ;(body.fields || []).forEach((field) => {
+      form[field.key] = field.type === 'time' && field.value
+        ? String(field.value).slice(0, 5)
+        : field.value
+    })
+    newForm.value = form
+  } catch (err) {
+    detail.value = null
+    panel.value = 'summary'
+    Swal.fire({ icon: 'error', title: 'เปิดฟอร์มจองใหม่ไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
+  } finally {
+    newBookingLoading.value = false
+  }
+}
+
+function newValue(field) {
+  const value = newForm.value[field.key]
+  if (field.type === 'number') return Math.floor(Number(value))
+  if (field.type === 'money') return Number(value)
+  if (field.type === 'time') return normalizeTime(value)
+  return String(value ?? '').trim()
+}
+
+function newInvalid(field) {
+  const value = newValue(field)
+  if (field.type === 'number') {
+    return Number.isInteger(value) && value >= field.min && value <= 99 ? '' : `ใส่ได้ ${field.min}–99`
+  }
+  if (field.type === 'money') {
+    return Number.isFinite(value) && value >= 0 ? '' : 'ต้องไม่ติดลบ'
+  }
+  if (field.type === 'date') {
+    if (!value && field.required) return 'ห้ามเว้นว่าง'
+    return !value || /^\d{4}-\d{2}-\d{2}$/.test(value) ? '' : 'รูปแบบวันที่ไม่ถูกต้อง'
+  }
+  if (field.type === 'time') {
+    return !value || /^\d{1,2}:\d{2}(:\d{2})?$/.test(value) ? '' : 'ใช้รูปแบบ ชม:นาที'
+  }
+  return !value && field.required ? 'ห้ามเว้นว่าง' : ''
+}
+
+async function saveNewBooking() {
+  if (!newBooking.value || !detail.value || saving.value) return
+  newTried.value = true
+  const fields = newBooking.value.fields || []
+  if (fields.some(newInvalid)) return
+  const values = {}
+  fields.forEach((field) => { values[field.key] = newValue(field) })
+  if (values.departure && values.arrival && values.departure <= values.arrival) {
+    Swal.fire({ icon: 'warning', title: 'วันเช็คเอาต์ต้องหลังวันเช็คอิน', confirmButtonColor: '#001529' })
+    return
+  }
+  saving.value = true
+  try {
+    const { data: body } = await api.post(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/new-booking`, {
+      userId: userId(),
+      values,
+    })
+    saving.value = false
+    closeDrawer()
+    await load()
+    const room = rooms.value.find((item) => item.roomNo === (body.roomNo || values.roomNo))
+    const day = body.arrival || values.arrival
+    if (room && cellOf(room, day)) openDetail(room, day)
+    Swal.fire({
+      icon: 'success',
+      title: `จองห้อง ${body.roomNo} แล้ว`,
+      text: `เลขจอง ${body.resvNo}${body.guest ? ` · ${body.guest}` : ''}`,
+      timer: 2200,
+      showConfirmButton: false,
+    })
+  } catch (err) {
+    Swal.fire({ icon: 'error', title: 'จองไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
+  } finally {
+    saving.value = false
+  }
+}
+
+function openStopFromNew() {
+  if (!detail.value || detail.value.kind !== 'new') return
+  const roomNo = detail.value.roomNo
+  const day = newForm.value.arrival || detail.value.day
+  const room = rooms.value.find((item) => item.roomNo === roomNo) || { roomNo }
+  closeDrawer()
+  openStop(room, day)
 }
 
 function onKeydown(event) {
@@ -528,6 +646,12 @@ function editInvalid(field) {
 const editChanged = computed(() => (checkin.value?.edit?.fields || []).some(editDirty))
 const editSections = computed(() => {
   const fields = checkin.value?.edit?.fields || []
+  return editGroups
+    .map((group) => ({ ...group, fields: fields.filter((field) => field.group === group.key) }))
+    .filter((group) => group.fields.length)
+})
+const newSections = computed(() => {
+  const fields = newBooking.value?.fields || []
   return editGroups
     .map((group) => ({ ...group, fields: fields.filter((field) => field.group === group.key) }))
     .filter((group) => group.fields.length)
@@ -1011,7 +1135,7 @@ watch(() => props.hotelSlug, () => {
       <span><i class="inhouse"></i>เข้าพักแล้ว</span>
       <span><i class="ooo"></i>ปิดใช้งาน</span>
       <span><i class="history"></i>ประวัติ folio</span>
-      <small>กดแถบเพื่อดูรายละเอียด แก้ไข เช็คอิน หรือเช็คเอาต์ · ลากแถบสีเหลืองเพื่อย้ายห้องหรือวัน · กดช่องว่างตั้งแต่วันนี้เพื่อปิดการขาย · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
+      <small>กดแถบเพื่อดูรายละเอียด แก้ไข เช็คอิน หรือเช็คเอาต์ · กดช่องว่างตั้งแต่วันนี้เพื่อจองใหม่ · ลากแถบสีเหลืองเพื่อย้ายห้องหรือวัน · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
     </footer>
 
     <Transition name="drawer">
@@ -1027,7 +1151,7 @@ watch(() => props.hotelSlug, () => {
           </header>
 
           <div class="drawer-body">
-            <section class="card">
+            <section v-if="panel !== 'new'" class="card">
               <p class="guest-name">{{ checkin?.guest || detail.guest || '-' }}</p>
               <dl>
                 <template v-if="stay">
@@ -1046,8 +1170,41 @@ watch(() => props.hotelSlug, () => {
               </dl>
             </section>
 
+            <!-- จองใหม่จากช่องว่าง -->
+            <template v-if="panel === 'new'">
+              <p v-if="newBookingLoading" class="note">กำลังโหลดฟอร์มจองใหม่…</p>
+              <template v-else-if="newBooking">
+                <p class="note">จองห้อง {{ newBooking.roomNo }} · วันทำการ {{ formatDate(newBooking.sysDate) }} · บันทึกด้วยขั้นตอนเดียวกับ New ของ PMS</p>
+                <section v-for="section in newSections" :key="section.key" class="card">
+                  <h4>{{ section.label }}</h4>
+                  <div class="fields">
+                    <label
+                      v-for="field in section.fields"
+                      :key="field.key"
+                      :class="{ wide: field.type === 'textarea' || field.key === 'email' || field.key === 'memo' || field.key === 'memo2', invalid: newTried && newInvalid(field) }"
+                    >
+                      <span>{{ field.label }}</span>
+                      <select v-if="field.type === 'select'" v-model="newForm[field.key]">
+                        <option v-if="!field.required || !field.value" value="">ไม่ระบุ</option>
+                        <option v-if="field.value && !(field.options || []).some((option) => option.code === field.value)" :value="field.value">{{ field.value }}</option>
+                        <option v-for="option in field.options || []" :key="option.code" :value="option.code">{{ option.name }}</option>
+                      </select>
+                      <input v-else-if="field.type === 'number'" v-model.number="newForm[field.key]" type="number" :min="field.min" max="99" inputmode="numeric">
+                      <input v-else-if="field.type === 'money'" v-model.number="newForm[field.key]" type="number" :min="field.min ?? 0" step="0.01" inputmode="decimal">
+                      <input v-else-if="field.type === 'date'" v-model="newForm[field.key]" type="date" :min="field.key === 'arrival' || field.key === 'departure' ? data?.today : undefined">
+                      <input v-else-if="field.type === 'time'" v-model="newForm[field.key]" type="time" step="60">
+                      <textarea v-else-if="field.type === 'textarea'" v-model="newForm[field.key]" rows="3" :maxlength="field.size || 255"></textarea>
+                      <input v-else v-model="newForm[field.key]" :type="field.key === 'phone' ? 'tel' : field.key === 'email' ? 'email' : 'text'" :maxlength="field.size || 30">
+                      <small v-if="newTried && newInvalid(field)">{{ newInvalid(field) }}</small>
+                    </label>
+                  </div>
+                </section>
+                <button type="button" class="btn ghost wide" :disabled="saving" @click="openStopFromNew">ปิดการขายห้องนี้แทน</button>
+              </template>
+            </template>
+
             <!-- รายละเอียด -->
-            <template v-if="panel === 'summary'">
+            <template v-else-if="panel === 'summary'">
               <p v-if="detail.source === 'folio' || detail.kind === 'history'" class="note">ประวัติเข้าพักจาก folio history ดูได้อย่างเดียว</p>
               <template v-else-if="isBooking">
                 <p v-if="checkinLoading" class="note">กำลังโหลดข้อมูลการจอง…</p>
@@ -1254,6 +1411,10 @@ watch(() => props.hotelSlug, () => {
               <button v-if="isBooking" type="button" class="btn primary" :disabled="!checkin?.canCheckIn" @click="openCheckin">เช็คอิน</button>
               <button v-else-if="isInhouse" type="button" class="btn primary" @click="openCheckout">เช็คเอาต์</button>
             </template>
+            <template v-else-if="panel === 'new'">
+              <button type="button" class="btn ghost" :disabled="saving" @click="closeDrawer">ยกเลิก</button>
+              <button type="button" class="btn primary" :disabled="saving || newBookingLoading || !newBooking" @click="saveNewBooking">{{ saving ? 'กำลังจอง…' : 'บันทึกจองใหม่' }}</button>
+            </template>
             <template v-else-if="panel === 'checkin'">
               <button type="button" class="btn ghost" :disabled="saving" @click="panel = 'summary'">ย้อนกลับ</button>
               <button type="button" class="btn primary" :disabled="saving" @click="confirmCheckin">{{ saving ? 'กำลังเช็คอิน…' : 'ยืนยันเช็คอิน' }}</button>
@@ -1394,6 +1555,8 @@ td.stay.drop-bad .bar { box-shadow: 0 0 0 2px #c62828; }
 .chip.unconfirmed { background: #b9dcff; }
 .chip.inhouse { background: #ffc4ea; }
 .chip.history { background: #ead48a; }
+.chip.new { background: #d9f2e5; }
+.btn.wide { width: 100%; }
 .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
 .card { background: #fff; border: 1px solid #e1e8f2; border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
 .card h4 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
