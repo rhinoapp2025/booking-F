@@ -128,10 +128,15 @@ async function loadPlatform() {
   }
 }
 
+function branchAcceptsBookings(hotel) {
+  if (!hotel) return true
+  return hotel.is_active !== false && hotel.booking_open !== false
+}
+
 function syncSelectedFlags() {
   const hotel = selectedHotel.value
   applyHotelFlags(hotel?.features || { ...defaults })
-  bookingOpen.value = hotel?.booking_open !== false
+  bookingOpen.value = branchAcceptsBookings(hotel)
   showCatalogModal.value = false
   loadCatalogOptions()
 }
@@ -340,7 +345,7 @@ async function saveHotel() {
     })
     hotels.value = data.hotels || hotels.value
     applyHotelFlags(selectedHotel.value?.features || { ...defaults })
-    bookingOpen.value = selectedHotel.value?.booking_open !== false
+    bookingOpen.value = branchAcceptsBookings(selectedHotel.value)
     await refreshGuestNav(selectedHotel.value?.slug)
     message.value = `บันทึกฟังก์ชันของ ${selectedHotel.value?.name || 'สาขา'} แล้ว`
   } catch (err) {
@@ -363,7 +368,7 @@ async function setBookingOpen(open) {
       booking_open: open,
     })
     hotels.value = data.hotels || hotels.value
-    bookingOpen.value = selectedHotel.value?.booking_open !== false
+    bookingOpen.value = branchAcceptsBookings(selectedHotel.value)
     const name = selectedHotel.value?.name || 'สาขา'
     message.value = bookingOpen.value ? `เปิดให้จอง ${name} แล้ว` : `ปิดการจอง ${name} แล้ว`
   } catch (err) {
