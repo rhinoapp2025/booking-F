@@ -42,6 +42,34 @@ const isBooking = computed(() => ['booked', 'unconfirmed'].includes(detail.value
   && /^\d+$/.test(String(detail.value?.resvNo || '')))
 const isInhouse = computed(() => detail.value?.kind === 'inhouse' && detail.value?.source !== 'folio')
 const missingCount = computed(() => checkin.value?.missing?.length || 0)
+// มีเลขจองใน PMS = โหลดวันเข้าพัก/ออกและข้อมูลที่แก้ไขได้ (ทั้งที่จองไว้และที่เข้าพักแล้ว)
+const hasResv = computed(() => (isBooking.value || isInhouse.value)
+  && /^\d+$/.test(String(detail.value?.resvNo || '')))
+const canEdit = computed(() => ['booked', 'unconfirmed', 'inhouse'].includes(detail.value?.kind)
+  && hasResv.value && Boolean(checkin.value?.edit?.allowed))
+const editGroups = [
+  { key: 'stay', label: 'เข้าพัก / ห้อง' },
+  { key: 'guest', label: 'ผู้เข้าพัก' },
+  { key: 'codes', label: 'ตลาด / เอเจนต์' },
+  { key: 'rate', label: 'ราคา / จำนวนคน' },
+  { key: 'payment', label: 'การชำระ' },
+  { key: 'note', label: 'หมายเหตุ' },
+]
+// วันเช็คอิน/เช็คเอาต์: จากการจองใน PMS หรือจาก folio history ของแถบประวัติ
+const stay = computed(() => {
+  const arrival = checkin.value?.arrival || detail.value?.arrival
+  const departure = checkin.value?.departure || detail.value?.departure
+  if (!arrival || !departure) return null
+  const nights = Math.round((Date.parse(`${departure}T00:00:00Z`) - Date.parse(`${arrival}T00:00:00Z`)) / 86400000)
+  return { arrival, departure, nights: Math.max(1, nights) }
+})
+
+const editForm = ref({})
+const editTried = ref(false)
+// ลากย้าย: drag = แถบที่กำลังลาก, dropAt = ตำแหน่งที่จะวาง (ไว้ไฮไลต์)
+const drag = ref(null)
+const dropAt = ref(null)
+let dragData = null
 
 function baht(value) {
   return (Number(value) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
@@ -197,17 +225,147 @@ const freeByDay = computed(() => {
 const showFree = computed(() => Boolean(data.value) && !data.value.forecastError
   && freeByDay.value.some((n) => n !== null))
 
-// กดแถบหลายคืน: หาคืนที่กดจากตำแหน่งเมาส์ในแถบ
-function dayOfClick(seg, event) {
-  if (seg.span === 1) return seg.day
-  const box = event.currentTarget.getBoundingClientRect()
-  const offset = Math.floor(((event.clientX - box.left) / box.width) * seg.span)
-  return dates.value[seg.index + Math.min(seg.span - 1, Math.max(0, offset))]
+// แถบหลายคืน: หาคืนที่เมาส์ชี้จากตำแหน่งในช่อง
+function indexAtPoint(seg, box, clientX) {
+  if (seg.span === 1) return seg.index
+  const offset = Math.floor(((clientX - box.left) / box.width) * seg.span)
+  return seg.index + Math.min(seg.span - 1, Math.max(0, offset))
 }
 
 function onCellClick(room, seg, event) {
-  if (seg.cell) openDetail(room, dayOfClick(seg, event))
-  else openStop(room, seg.day)
+  if (!seg.cell) {
+    openStop(room, seg.day)
+    return
+  }
+  const index = indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX)
+  openDetail(room, dates.value[index])
+}
+
+// ---- ลากย้ายการจองที่ยืนยันแล้ว (แถบสีเหลือง) ไปห้อง/วันใหม่ แบบ Booking Calendar ของ PMS ----
+function canDrag(seg) {
+  return seg.cell?.kind === 'booked' && seg.cell.source !== 'folio'
+    && /^\d+$/.test(String(seg.cell.resvNo || '')) && !saving.value && !loading.value
+}
+
+function endDrag() {
+  dragData = null
+  drag.value = null
+  dropAt.value = null
+}
+
+function onDragStart(room, seg, event) {
+  if (!canDrag(seg)) {
+    event.preventDefault()
+    return
+  }
+  const box = event.currentTarget.parentElement.getBoundingClientRect()
+  dragData = {
+    roomNo: room.roomNo,
+    typeName: room.typeName || '',
+    index: seg.index,
+    span: seg.span,
+    // จับแถบที่คืนไหน จะได้วางแล้วคืนนั้นอยู่ใต้เมาส์พอดี
+    grab: indexAtPoint(seg, box, event.clientX) - seg.index,
+    cell: seg.cell,
+  }
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(seg.cell.resvNo))
+  // เปลี่ยนหน้าตาแถบหลังเริ่มลากแล้ว ถ้าแก้ DOM ระหว่าง dragstart เบราว์เซอร์อาจยกเลิกการลาก
+  setTimeout(() => { if (dragData) drag.value = dragData }, 0)
+}
+
+function dropCheck(room, start, moving) {
+  const list = dates.value
+  const today = data.value?.today || bangkokToday()
+  const sameRoom = room.roomNo === moving.roomNo
+  if (sameRoom && start === moving.index) return { ok: false, reason: '' }
+  if (start < 0) return { ok: false, reason: 'เลยช่วงวันที่ที่แสดงอยู่ เลื่อนช่วงวันแล้วลองใหม่' }
+  if (start !== moving.index && list[start] < today) return { ok: false, reason: 'ย้ายไปวันที่ผ่านมาแล้วไม่ได้' }
+  for (let i = start; i < start + moving.span && i < list.length; i += 1) {
+    const cell = cellOf(room, list[i])
+    if (cell && !(sameRoom && sameStay(cell, moving.cell))) {
+      return { ok: false, reason: `ห้อง ${room.roomNo} ไม่ว่างวันที่ ${formatDate(list[i])}` }
+    }
+  }
+  return { ok: true, reason: '' }
+}
+
+function onDragOver(room, seg, event) {
+  if (!dragData) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  const start = indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX) - dragData.grab
+  const current = dropAt.value
+  if (current && current.roomNo === room.roomNo && current.start === start) return
+  dropAt.value = { roomNo: room.roomNo, start, span: dragData.span, ok: dropCheck(room, start, dragData).ok }
+}
+
+function dropClass(room, seg) {
+  const at = dropAt.value
+  if (!at || at.roomNo !== room.roomNo) return ''
+  if (seg.index + seg.span <= at.start || seg.index >= at.start + at.span) return ''
+  return at.ok ? 'drop-ok' : 'drop-bad'
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+  ))
+}
+
+async function onDrop(room, seg, event) {
+  const moving = dragData
+  if (!moving) return
+  event.preventDefault()
+  const start = indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX) - moving.grab
+  endDrag()
+  const check = dropCheck(room, start, moving)
+  if (!check.ok) {
+    if (check.reason) Swal.fire({ icon: 'warning', title: 'ย้ายไม่ได้', text: check.reason, confirmButtonColor: '#001529' })
+    return
+  }
+  await confirmMove(moving, room, start - moving.index)
+}
+
+async function confirmMove(moving, room, shift) {
+  if (saving.value) return
+  const base = `/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar`
+  const resvNo = moving.cell.resvNo
+  saving.value = true
+  try {
+    // ใช้วันเข้าพักจริงของการจอง ไม่ใช่วันแรกที่เห็นในตาราง (แถบอาจเริ่มก่อนหรือยาวเกินช่วงที่แสดง)
+    const { data: info } = await api.get(`${base}/checkin`, { params: { resvNo, roomNo: moving.roomNo } })
+    if (!info?.arrival || !info?.departure) throw new Error('การจองนี้ยังไม่มีวันที่เข้าพักหรือวันที่ออก')
+    const newArrival = addDays(info.arrival, shift)
+    const newDeparture = addDays(info.departure, shift)
+    const typeNote = (room.typeName || '') !== moving.typeName
+      ? `<p style="color:#8a4b00">ประเภทห้องเปลี่ยนจาก ${escapeHtml(moving.typeName || '-')} เป็น ${escapeHtml(room.typeName || '-')}</p>`
+      : ''
+    const answer = await Swal.fire({
+      icon: 'question',
+      title: 'ยืนยันการย้ายการจอง?',
+      html: `<p><b>${escapeHtml(info.guest || moving.cell.guest)}</b> · เลขจอง ${escapeHtml(resvNo)}</p>`
+        + `<p>จากห้อง <b>${escapeHtml(moving.roomNo)}</b> (${formatDate(info.arrival)} → ${formatDate(info.departure)})<br>`
+        + `ไปห้อง <b>${escapeHtml(room.roomNo)}</b> (${formatDate(newArrival)} → ${formatDate(newDeparture)})</p>${typeNote}`,
+      showCancelButton: true,
+      confirmButtonText: 'ย้าย',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#001529',
+    })
+    if (!answer.isConfirmed) return
+    await api.post(`${base}/move`, { resvNo, roomNo: moving.roomNo, newRoomNo: room.roomNo, newArrival })
+    await load()
+    Swal.fire({
+      icon: 'success',
+      title: `ย้ายไปห้อง ${room.roomNo} แล้ว`,
+      text: `${formatDate(newArrival)} → ${formatDate(newDeparture)}`,
+      confirmButtonColor: '#001529',
+    })
+  } catch (err) {
+    Swal.fire({ icon: 'error', title: 'ย้ายการจองไม่สำเร็จ', text: err?.response?.data?.error || err?.message || '', confirmButtonColor: '#001529' })
+  } finally {
+    saving.value = false
+  }
 }
 
 function shiftRange(direction) {
@@ -249,7 +407,7 @@ function openDetail(room, day) {
   checkin.value = null
   checkinError.value = ''
   checkinTried.value = false
-  if (isBooking.value) loadCheckin()
+  if (hasResv.value) loadCheckin()
 }
 
 function closeDrawer() {
@@ -306,6 +464,110 @@ function openCheckin() {
   if (!checkin.value?.canCheckIn) return
   checkinTried.value = false
   panel.value = 'checkin'
+}
+
+// ---- แก้ไขข้อมูลการจอง (สีเหลืองและสีชมพู) ----
+function openEdit() {
+  if (!canEdit.value) return
+  const form = {}
+  checkin.value.edit.fields.forEach((field) => {
+    // input type=time ใช้ ชม:นาที ส่วนค่าจาก PMS เป็น ชม:นาที:วินาที
+    form[field.key] = field.type === 'time' && field.value
+      ? String(field.value).slice(0, 5)
+      : field.value
+  })
+  editForm.value = form
+  editTried.value = false
+  panel.value = 'edit'
+}
+
+function normalizeTime(value) {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+  if (!match) return ''
+  return `${match[1].padStart(2, '0')}:${match[2]}:${match[3] || '00'}`
+}
+
+function editValue(field) {
+  const value = editForm.value[field.key]
+  if (field.type === 'number') return Math.floor(Number(value))
+  if (field.type === 'money') return Number(value)
+  if (field.type === 'time') return normalizeTime(value)
+  return String(value ?? '').trim()
+}
+
+function editDirty(field) {
+  if (field.locked) return false
+  if (field.type === 'money') return Number(editForm.value[field.key]) !== Number(field.value)
+  if (field.type === 'number') return Number(editForm.value[field.key]) !== Number(field.value)
+  if (field.type === 'time') return normalizeTime(editForm.value[field.key]) !== normalizeTime(field.value)
+  return String(editForm.value[field.key] ?? '').trim() !== String(field.value ?? '').trim()
+}
+
+// ตรวจเฉพาะช่องที่แก้ ช่องที่ไม่ได้แตะไม่บังคับ (ตรงกับฝั่งเซิร์ฟเวอร์)
+function editInvalid(field) {
+  if (!editDirty(field)) return ''
+  const value = editValue(field)
+  if (field.type === 'number') {
+    return Number.isInteger(value) && value >= field.min && value <= 99 ? '' : `ใส่ได้ ${field.min}–99`
+  }
+  if (field.type === 'money') {
+    return Number.isFinite(value) && value >= 0 ? '' : 'ต้องไม่ติดลบ'
+  }
+  if (field.type === 'date') {
+    if (!value && field.required) return 'ห้ามเว้นว่าง'
+    return !value || /^\d{4}-\d{2}-\d{2}$/.test(value) ? '' : 'รูปแบบวันที่ไม่ถูกต้อง'
+  }
+  if (field.type === 'time') {
+    return !value || /^\d{1,2}:\d{2}(:\d{2})?$/.test(value) ? '' : 'ใช้รูปแบบ ชม:นาที'
+  }
+  return !value && field.required ? 'ห้ามเว้นว่าง' : ''
+}
+
+const editChanged = computed(() => (checkin.value?.edit?.fields || []).some(editDirty))
+const editSections = computed(() => {
+  const fields = checkin.value?.edit?.fields || []
+  return editGroups
+    .map((group) => ({ ...group, fields: fields.filter((field) => field.group === group.key) }))
+    .filter((group) => group.fields.length)
+})
+
+async function saveEdit() {
+  if (!checkin.value?.edit || !detail.value || saving.value) return
+  editTried.value = true
+  const fields = checkin.value.edit.fields
+  if (fields.some(editInvalid)) return
+  if (!editChanged.value) {
+    panel.value = 'summary'
+    return
+  }
+  const values = {}
+  fields.filter(editDirty).forEach((field) => { values[field.key] = editValue(field) })
+  const target = detail.value
+  saving.value = true
+  try {
+    const { data: body } = await api.post(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/booking`, {
+      resvNo: target.resvNo,
+      roomNo: target.roomNo,
+      userId: userId(),
+      values,
+    })
+    saving.value = false
+    panel.value = 'summary'
+    await load()
+    const nextRoom = body?.roomNo || target.roomNo
+    const nextDay = body?.arrival || target.day
+    const room = rooms.value.find((item) => item.roomNo === nextRoom)
+    if (room && cellOf(room, nextDay)) openDetail(room, nextDay)
+    else {
+      detail.value = { ...target, roomNo: nextRoom, day: nextDay }
+      await loadCheckin()
+    }
+    Swal.fire({ icon: 'success', title: 'บันทึกข้อมูลแล้ว', timer: 1600, showConfirmButton: false })
+  } catch (err) {
+    Swal.fire({ icon: 'error', title: 'บันทึกไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
+  } finally {
+    saving.value = false
+  }
 }
 
 async function confirmCheckin() {
@@ -399,10 +661,9 @@ async function openCheckout() {
       params: { roomNo },
     })
     if (detail.value !== target) return
-    folio.value = body
-    if (Number(body.balance?.amount) > 0) folioTab.value = 'payment'
     chargeForm.value = { trnCode: body.charges?.[0]?.code || '', quantity: 1, amount: body.charges?.[0]?.price || 0, remark: '' }
     paymentForm.value = { trnCode: body.payments?.[0]?.code || '', amount: Math.max(0, Number(body.balance?.amount) || 0), company: body.companies?.[0]?.code || '', remark: '' }
+    applyFolio(body)
   } catch (err) {
     if (detail.value === target) panel.value = 'summary'
     Swal.fire({ icon: 'error', title: 'เปิดรายการห้องไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
@@ -411,12 +672,23 @@ async function openCheckout() {
   }
 }
 
+function applyFolio(body) {
+  folio.value = body
+  paymentForm.value.amount = Math.max(0, Number(body.balance?.amount) || 0)
+  if (Number(body.balance?.amount) > 0) folioTab.value = 'payment'
+  else if (body.overpaid) folioTab.value = 'payment'
+}
+
 async function refreshFolio(roomNo) {
   const { data: body } = await api.get(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/folio`, {
     params: { roomNo },
   })
-  folio.value = body
-  paymentForm.value.amount = Math.max(0, Number(body.balance?.amount) || 0)
+  applyFolio(body)
+}
+
+function fillPayBalance() {
+  paymentForm.value.amount = Math.max(0, Number(folio.value?.balance?.amount) || 0)
+  folioTab.value = 'payment'
 }
 
 async function postCharge() {
@@ -428,9 +700,8 @@ async function postCharge() {
       userId: userId(),
       ...chargeForm.value,
     })
-    folio.value = body
     chargeForm.value.remark = ''
-    paymentForm.value.amount = Math.max(0, Number(body.balance?.amount) || 0)
+    applyFolio(body)
   } catch (err) {
     Swal.fire({ icon: 'error', title: 'โพสต์ค่าห้องไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
   } finally {
@@ -447,9 +718,8 @@ async function postPayment() {
       userId: userId(),
       ...paymentForm.value,
     })
-    folio.value = body
-    paymentForm.value.amount = Math.max(0, Number(body.balance?.amount) || 0)
     paymentForm.value.remark = ''
+    applyFolio(body)
   } catch (err) {
     Swal.fire({ icon: 'error', title: 'เพิ่มรายการชำระไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
   } finally {
@@ -457,8 +727,62 @@ async function postPayment() {
   }
 }
 
+async function voidLine(line) {
+  if (!folio.value || saving.value || !line?.canVoid) return
+  const ask = await Swal.fire({
+    icon: 'warning',
+    title: 'ยกเลิกรายการนี้?',
+    html: `<b>${line.name}</b><br>฿${baht(line.amount)}`,
+    input: 'text',
+    inputLabel: 'เหตุผล',
+    inputValue: 'ยกเลิกผิดรายการ',
+    inputAttributes: { maxlength: 50 },
+    showCancelButton: true,
+    confirmButtonText: 'ยกเลิกรายการ',
+    cancelButtonText: 'ปิด',
+    confirmButtonColor: '#b42318',
+  })
+  if (!ask.isConfirmed) return
+  saving.value = true
+  try {
+    const { data: body } = await api.post(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/folio/void`, {
+      roomNo: folio.value.roomNo,
+      userId: userId(),
+      recId: line.recId,
+      reason: ask.value || 'ยกเลิกผิดรายการ',
+    })
+    applyFolio(body)
+  } catch (err) {
+    Swal.fire({ icon: 'error', title: 'ยกเลิกรายการไม่สำเร็จ', text: err?.response?.data?.error || '', confirmButtonColor: '#001529' })
+  } finally {
+    saving.value = false
+  }
+}
+
 async function confirmCheckout() {
   if (!folio.value || saving.value) return
+  if (!folio.value.canCheckout) {
+    const amount = Number(folio.value.balance?.amount) || 0
+    Swal.fire({
+      icon: 'warning',
+      title: 'ยังเช็คเอาต์ไม่ได้',
+      text: amount > 0
+        ? `ยังมียอดค้าง ฿${baht(amount)} ให้รับชำระให้ครบก่อน`
+        : `มียอดเกินชำระ ฿${baht(Math.abs(amount))} ให้ยกเลิกรายการชำระส่วนเกินก่อน`,
+      confirmButtonColor: '#001529',
+    })
+    return
+  }
+  const ask = await Swal.fire({
+    icon: 'question',
+    title: `เช็คเอาต์ห้อง ${folio.value.roomNo}?`,
+    text: folio.value.guestName || 'ยอดโฟลิโอเป็น 0 แล้ว',
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยันเช็คเอาต์',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#001529',
+  })
+  if (!ask.isConfirmed) return
   saving.value = true
   try {
     await api.post(`/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar/folio/checkout`, {
@@ -635,11 +959,20 @@ watch(() => props.hotelSlug, () => {
               v-for="seg in segments.get(room.roomNo)"
               :key="seg.day"
               :colspan="seg.span"
-              :class="[seg.cell ? 'stay' : 'empty', { weekend: seg.weekend }]"
+              :class="[seg.cell ? 'stay' : 'empty', dropClass(room, seg), { weekend: seg.weekend, dragging: drag && drag.roomNo === room.roomNo && drag.index === seg.index }]"
               :title="seg.cell ? seg.cell.guest : (seg.day >= (data?.today || '') ? 'ว่าง' : '')"
               @click="onCellClick(room, seg, $event)"
+              @dragover="onDragOver(room, seg, $event)"
+              @drop="onDrop(room, seg, $event)"
             >
-              <div v-if="seg.cell" class="bar" :class="seg.cell.kind">
+              <div
+                v-if="seg.cell"
+                class="bar"
+                :class="seg.cell.kind"
+                :draggable="canDrag(seg)"
+                @dragstart="onDragStart(room, seg, $event)"
+                @dragend="endDrag"
+              >
                 <span class="guest">{{ seg.cell.guest }}</span>
               </div>
               <i v-if="seg.todayLeft" class="today-line" :style="{ left: seg.todayLeft }"></i>
@@ -657,7 +990,7 @@ watch(() => props.hotelSlug, () => {
       <span><i class="inhouse"></i>เข้าพักแล้ว</span>
       <span><i class="ooo"></i>ปิดใช้งาน</span>
       <span><i class="history"></i>ประวัติ folio</span>
-      <small>กดช่องที่มีชื่อเพื่อดูรายละเอียด เช็คอิน หรือเช็คเอาต์ · กดช่องว่างตั้งแต่วันนี้เพื่อปิดการขาย · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
+      <small>กดแถบเพื่อดูรายละเอียด แก้ไข เช็คอิน หรือเช็คเอาต์ · ลากแถบสีเหลืองเพื่อย้ายห้องหรือวัน · กดช่องว่างตั้งแต่วันนี้เพื่อปิดการขาย · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
     </footer>
 
     <Transition name="drawer">
@@ -676,8 +1009,11 @@ watch(() => props.hotelSlug, () => {
             <section class="card">
               <p class="guest-name">{{ checkin?.guest || detail.guest || '-' }}</p>
               <dl>
-                <div v-if="checkin?.arrival"><dt>เข้าพัก</dt><dd>{{ formatDate(checkin.arrival) }} → {{ formatDate(checkin.departure) }} · {{ checkin.nights }} คืน</dd></div>
-                <div v-else><dt>วันที่</dt><dd>{{ formatDate(detail.day) }}</dd></div>
+                <template v-if="stay">
+                  <div><dt>เช็คอิน</dt><dd>{{ formatDate(stay.arrival) }}</dd></div>
+                  <div><dt>เช็คเอาต์</dt><dd>{{ formatDate(stay.departure) }} · {{ stay.nights }} คืน</dd></div>
+                </template>
+                <div v-else><dt>{{ hasResv && checkinLoading ? 'เช็คอิน – เช็คเอาต์' : 'วันที่' }}</dt><dd>{{ hasResv && checkinLoading ? 'กำลังโหลด…' : formatDate(detail.day) }}</dd></div>
                 <div><dt>เลขจอง</dt><dd>{{ detail.resvNo || '-' }}</dd></div>
                 <template v-if="checkin">
                   <div><dt>ผู้เข้าพัก</dt><dd>ผู้ใหญ่ {{ checkin.adults }}<template v-if="checkin.children"> · เด็ก {{ checkin.children }}</template></dd></div>
@@ -699,7 +1035,41 @@ watch(() => props.hotelSlug, () => {
                 <p v-else-if="checkin && missingCount" class="note">ยังขาดข้อมูล {{ missingCount }} รายการ ระบบจะให้กรอกเฉพาะส่วนที่ขาดตอนเช็คอิน</p>
                 <p v-else-if="checkin" class="note ok">ข้อมูลครบ พร้อมเช็คอิน</p>
               </template>
-              <p v-else-if="isInhouse" class="note">กดเช็คเอาต์เพื่อดูรายการในห้อง โพสต์ค่าห้อง และรับชำระ ก่อนยืนยันเช็คเอาต์</p>
+              <template v-else-if="isInhouse">
+                <p class="note">กดเช็คเอาต์เพื่อดูโฟลิโอ โพสต์รายการ รับชำระ ยกเลิกรายการวันทำการนี้ แล้วยืนยันเช็คเอาต์เมื่อยอดเป็น 0</p>
+                <p v-if="checkinError" class="note warn">{{ checkinError }} <button type="button" class="link" @click="loadCheckin">ลองอีกครั้ง</button></p>
+              </template>
+              <p v-if="canEdit === false && checkin?.edit && !checkin.edit.allowed && (isInhouse || !checkin.blockReason)" class="note">แก้ไขจากปฏิทินไม่ได้: {{ checkin.edit.reason }}</p>
+            </template>
+
+            <!-- แก้ไขข้อมูลการจอง เท่าที่ PMS แก้ได้ -->
+            <template v-else-if="panel === 'edit' && checkin?.edit">
+              <p v-if="checkin.checkedIn" class="note">แขกเช็คอินแล้ว ห้อง มัดจำ และ Paid by แก้ไม่ได้เหมือน PMS ส่วนชื่อ วันออก และราคาแก้ได้</p>
+              <section v-for="section in editSections" :key="section.key" class="card">
+                <h4>{{ section.label }}</h4>
+                <div class="fields">
+                  <label
+                    v-for="field in section.fields"
+                    :key="field.key"
+                    :class="{ wide: field.type === 'textarea' || field.key === 'email' || field.key === 'memo' || field.key === 'memo2', invalid: editTried && editInvalid(field) }"
+                  >
+                    <span>{{ field.label }}<template v-if="field.locked"> · ล็อก</template></span>
+                    <select v-if="field.type === 'select'" v-model="editForm[field.key]" :disabled="field.locked">
+                      <option v-if="!field.required || !field.value" value="">ไม่ระบุ</option>
+                      <option v-if="field.value && !(field.options || []).some((option) => option.code === field.value)" :value="field.value">{{ field.value }}</option>
+                      <option v-for="option in field.options || []" :key="option.code" :value="option.code">{{ option.name }}</option>
+                    </select>
+                    <input v-else-if="field.type === 'number'" v-model.number="editForm[field.key]" type="number" :min="field.min" max="99" inputmode="numeric" :disabled="field.locked">
+                    <input v-else-if="field.type === 'money'" v-model.number="editForm[field.key]" type="number" :min="field.min ?? 0" step="0.01" inputmode="decimal" :disabled="field.locked">
+                    <input v-else-if="field.type === 'date'" v-model="editForm[field.key]" type="date" :disabled="field.locked">
+                    <input v-else-if="field.type === 'time'" v-model="editForm[field.key]" type="time" step="60" :disabled="field.locked">
+                    <textarea v-else-if="field.type === 'textarea'" v-model="editForm[field.key]" rows="3" :maxlength="field.size || 255" :disabled="field.locked"></textarea>
+                    <input v-else v-model="editForm[field.key]" :type="field.key === 'phone' ? 'tel' : field.key === 'email' ? 'email' : 'text'" :maxlength="field.size || 30" :disabled="field.locked">
+                    <small v-if="editTried && editInvalid(field)">{{ editInvalid(field) }}</small>
+                  </label>
+                </div>
+              </section>
+              <p class="note">บันทึกด้วยขั้นตอนเดียวกับปุ่ม Save ของ PMS · ย้ายห้องเร็ว ๆ ได้ด้วยการลากแถบสีเหลืองในปฏิทิน</p>
             </template>
 
             <!-- ขั้นเช็คอิน -->
@@ -753,34 +1123,62 @@ watch(() => props.hotelSlug, () => {
               </section>
             </template>
 
-            <!-- ขั้นเช็คเอาต์ -->
+            <!-- ขั้นเช็คเอาต์ เท่าที่แคชเชียร์ PMS ใช้ประจำ -->
             <template v-else-if="panel === 'folio'">
               <p v-if="folioLoading" class="note">กำลังโหลดรายการในห้อง…</p>
               <template v-else-if="folio">
-                <section class="card balance" :class="{ settled: folio.canCheckout }">
-                  <span>ยอดคงเหลือ · โฟลิโอ {{ folio.folioNo }}</span>
+                <section class="card">
+                  <h4>{{ folio.guestName || detail?.guest || 'ผู้เข้าพัก' }}</h4>
+                  <dl class="meta">
+                    <div><dt>เลขจอง</dt><dd>{{ folio.resvNo || '—' }} · โฟลิโอ {{ folio.folioNo }}</dd></div>
+                    <div v-if="folio.arrival"><dt>เข้าพัก</dt><dd>{{ formatDate(folio.arrival) }} → {{ formatDate(folio.departure) }}</dd></div>
+                    <div v-if="folio.rate != null"><dt>ราคาห้อง</dt><dd>฿{{ baht(folio.rate) }} / คืน</dd></div>
+                  </dl>
+                </section>
+
+                <section class="card balance" :class="{ settled: folio.canCheckout, over: folio.overpaid }">
+                  <span>ยอดคงเหลือ</span>
                   <b>฿{{ baht(folio.balance?.amount) }}</b>
                   <small>เซอร์วิส ฿{{ baht(folio.balance?.service) }} · ภาษี ฿{{ baht(folio.balance?.tax) }}</small>
-                  <em>{{ folio.canCheckout ? 'ยอดเป็น 0 พร้อมเช็คเอาต์' : 'รับชำระให้ยอดเป็น 0 ก่อนเช็คเอาต์' }}</em>
+                  <em v-if="folio.canCheckout">ยอดเป็น 0 พร้อมเช็คเอาต์</em>
+                  <em v-else-if="folio.overpaid">เกินชำระ — ยกเลิกรายการชำระส่วนเกินก่อนเช็คเอาต์</em>
+                  <em v-else>รับชำระให้ยอดเป็น 0 ก่อนเช็คเอาต์</em>
+                  <button
+                    v-if="Number(folio.balance?.amount) > 0"
+                    type="button"
+                    class="btn wide"
+                    :disabled="saving"
+                    @click="fillPayBalance"
+                  >รับชำระยอดคงเหลือ ฿{{ baht(folio.balance?.amount) }}</button>
                 </section>
 
                 <section class="card">
                   <h4>รายการในห้อง <span class="count">{{ folio.lines?.length || 0 }}</span></h4>
                   <p v-if="!folio.lines?.length" class="muted">ยังไม่มีรายการในโฟลิโอ</p>
                   <ul v-else class="lines">
-                    <li v-for="(line, index) in folio.lines" :key="index">
+                    <li v-for="line in folio.lines" :key="line.recId || `${line.postedAt}-${line.code}-${line.amount}`">
                       <span>
                         {{ line.name }}<template v-if="line.qty > 1"> × {{ line.qty }}</template>
                         <small>{{ line.postedAt }}<template v-if="line.remark && line.remark !== '/'"> · {{ line.remark }}</template></small>
                       </span>
-                      <b :class="{ pay: line.amount < 0 }">฿{{ baht(line.amount) }}</b>
+                      <span class="line-actions">
+                        <b :class="{ pay: line.amount < 0 }">฿{{ baht(line.amount) }}</b>
+                        <button
+                          v-if="line.canVoid"
+                          type="button"
+                          class="link danger"
+                          :disabled="saving"
+                          @click="voidLine(line)"
+                        >ยกเลิก</button>
+                      </span>
                     </li>
                   </ul>
+                  <p class="muted">ยกเลิกได้เฉพาะรายการวันทำการ {{ formatDate(folio.sysDate) }} เหมือนแคชเชียร์</p>
                 </section>
 
                 <section class="card">
                   <div class="tabs" role="tablist">
-                    <button type="button" role="tab" :aria-selected="folioTab === 'charge'" :class="{ on: folioTab === 'charge' }" @click="folioTab = 'charge'">โพสต์ค่าห้อง</button>
+                    <button type="button" role="tab" :aria-selected="folioTab === 'charge'" :class="{ on: folioTab === 'charge' }" @click="folioTab = 'charge'">โพสต์ค่าใช้จ่าย</button>
                     <button type="button" role="tab" :aria-selected="folioTab === 'payment'" :class="{ on: folioTab === 'payment' }" @click="folioTab = 'payment'">รับชำระ</button>
                   </div>
                   <form v-if="folioTab === 'charge'" class="fields" @submit.prevent="postCharge">
@@ -793,7 +1191,7 @@ watch(() => props.hotelSlug, () => {
                     <label><span>จำนวน</span><input v-model.number="chargeForm.quantity" type="number" min="1" required inputmode="numeric" @change="syncChargeAmount"></label>
                     <label><span>จำนวนเงิน (บาท)</span><input v-model.number="chargeForm.amount" type="number" min="0" step="0.01" required inputmode="decimal"></label>
                     <label class="wide"><span>หมายเหตุ</span><input v-model="chargeForm.remark" maxlength="50"></label>
-                    <button type="submit" class="btn wide" :disabled="saving">โพสต์ค่าห้อง</button>
+                    <button type="submit" class="btn wide" :disabled="saving">โพสต์รายการ</button>
                   </form>
                   <form v-else class="fields" @submit.prevent="postPayment">
                     <label class="wide">
@@ -809,8 +1207,12 @@ watch(() => props.hotelSlug, () => {
                         <option v-for="item in folio.companies" :key="item.code" :value="item.code">{{ item.name }}</option>
                       </select>
                     </label>
-                    <label><span>จำนวนเงิน (บาท)</span><input v-model.number="paymentForm.amount" type="number" min="0" step="0.01" required inputmode="decimal"></label>
-                    <label><span>หมายเหตุ</span><input v-model="paymentForm.remark" maxlength="50"></label>
+                    <label>
+                      <span>จำนวนเงิน (บาท)</span>
+                      <input v-model.number="paymentForm.amount" type="number" min="0" step="0.01" required inputmode="decimal">
+                    </label>
+                    <label class="wide"><span>หมายเหตุ</span><input v-model="paymentForm.remark" maxlength="50"></label>
+                    <button type="button" class="btn ghost wide" :disabled="saving || !(Number(folio.balance?.amount) > 0)" @click="fillPayBalance">ใส่ยอดคงเหลือทั้งหมด</button>
                     <button type="submit" class="btn wide" :disabled="saving">เพิ่มรายการชำระ</button>
                   </form>
                 </section>
@@ -821,12 +1223,17 @@ watch(() => props.hotelSlug, () => {
           <footer class="drawer-foot">
             <template v-if="panel === 'summary'">
               <button type="button" class="btn ghost" @click="closeDrawer">ปิด</button>
+              <button v-if="canEdit" type="button" class="btn ghost" @click="openEdit">แก้ไข</button>
               <button v-if="isBooking" type="button" class="btn primary" :disabled="!checkin?.canCheckIn" @click="openCheckin">เช็คอิน</button>
               <button v-else-if="isInhouse" type="button" class="btn primary" @click="openCheckout">เช็คเอาต์</button>
             </template>
             <template v-else-if="panel === 'checkin'">
               <button type="button" class="btn ghost" :disabled="saving" @click="panel = 'summary'">ย้อนกลับ</button>
               <button type="button" class="btn primary" :disabled="saving" @click="confirmCheckin">{{ saving ? 'กำลังเช็คอิน…' : 'ยืนยันเช็คอิน' }}</button>
+            </template>
+            <template v-else-if="panel === 'edit'">
+              <button type="button" class="btn ghost" :disabled="saving" @click="panel = 'summary'">ย้อนกลับ</button>
+              <button type="button" class="btn primary" :disabled="saving || !editChanged" @click="saveEdit">{{ saving ? 'กำลังบันทึก…' : 'บันทึก' }}</button>
             </template>
             <template v-else>
               <button type="button" class="btn ghost" :disabled="saving" @click="panel = 'summary'">ย้อนกลับ</button>
@@ -920,6 +1327,14 @@ td.empty:hover { background: #e9f2fc; }
 td.stay:hover .bar { box-shadow: 0 0 0 2px rgba(10, 90, 150, .28); }
 /* ชื่อเกาะขอบซ้ายของจอเมื่อเลื่อน แถบที่เริ่มก่อนช่วงที่เห็นจึงยังอ่านชื่อได้ */
 .guest { position: sticky; left: calc(var(--room-w) + 4px); min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 7px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 700; color: #142033; }
+/* ลากย้าย: แถบสีเหลืองจับลากได้ ช่องปลายทางเขียว = วางได้ แดง = ไม่ว่าง */
+.bar[draggable="true"] { cursor: grab; }
+.bar[draggable="true"]:active { cursor: grabbing; }
+td.dragging .bar { opacity: .45; }
+td.empty.drop-ok { background: #d8f3e2; box-shadow: inset 0 2px 0 #1f9d55, inset 0 -2px 0 #1f9d55; }
+td.empty.drop-bad { background: #fde3e3; box-shadow: inset 0 2px 0 #c62828, inset 0 -2px 0 #c62828; }
+td.stay.drop-ok .bar { box-shadow: 0 0 0 2px #1f9d55; }
+td.stay.drop-bad .bar { box-shadow: 0 0 0 2px #c62828; }
 .today-line { position: absolute; top: 0; bottom: -1px; width: 2px; margin-left: -1px; background: #0a5a96; pointer-events: none; z-index: 1; }
 .group-row th { height: 30px; padding: 0 8px; background: #f4f7fb; text-align: left; }
 .group-row button { position: sticky; left: 8px; border: 0; background: transparent; padding: 0; font: inherit; font-weight: 650; cursor: pointer; }
@@ -971,21 +1386,31 @@ td.stay:hover .bar { box-shadow: 0 0 0 2px rgba(10, 90, 150, .28); }
 .fields label { display: grid; gap: 5px; align-content: start; font-size: 12px; color: #5c6f86; min-width: 0; }
 .fields input, .fields select { width: 100%; min-width: 0; box-sizing: border-box; height: 42px; padding: 0 12px; border: 1px solid #cfdbe9; border-radius: 10px; background: #fff; color: #142033; font: inherit; font-size: 14px; }
 .fields input:focus-visible, .fields select:focus-visible, .btn:focus-visible, .icon-btn:focus-visible, .tabs button:focus-visible { outline: 2px solid #0a5a96; outline-offset: 2px; }
+.fields textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cfdbe9; border-radius: 10px; background: #fff; color: #142033; font: inherit; font-size: 14px; line-height: 1.45; resize: vertical; }
+.fields textarea:focus-visible { outline: 2px solid #0a5a96; outline-offset: 2px; }
+.fields input:disabled, .fields select:disabled { background: #f1f5fa; color: #6d7f96; cursor: not-allowed; }
 .fields .invalid input, .fields .invalid select { border-color: #c62828; background: #fff7f7; }
 .fields label small { color: #c62828; }
 .balance { gap: 2px; background: #fff8ec; border-color: #f3ddb5; }
 .balance.settled { background: #e9f7ee; border-color: #bfe3cb; }
+.balance.over { background: #fff1f0; border-color: #f3c1bc; }
 .balance span, .balance small { color: #5c6f86; font-size: 12px; }
 .balance b { font-size: 30px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .balance em { margin-top: 4px; font-style: normal; font-size: 13px; font-weight: 600; color: #8a4b00; }
 .balance.settled em { color: #0c6b34; }
-.lines { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.balance.over em { color: #b42318; }
+.balance .btn { margin-top: 10px; }
+.lines { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
 .lines li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid #eef2f7; font-size: 14px; }
 .lines li:first-child { border-top: 0; padding-top: 0; }
 .lines span { min-width: 0; overflow-wrap: anywhere; }
 .lines small { display: block; color: #8494a8; font-size: 11px; }
 .lines b { flex: none; font-variant-numeric: tabular-nums; }
 .lines .pay { color: #0c6b34; }
+.line-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+.link { border: 0; background: none; padding: 0; color: #0061a1; font: inherit; font-size: 12px; cursor: pointer; }
+.link.danger { color: #b42318; }
+.link:disabled { opacity: 0.45; cursor: not-allowed; }
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: #eef2f7; }
 .tabs button { height: 36px; border: 0; border-radius: 9px; background: transparent; color: #44566c; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .tabs button.on { background: #fff; color: #142033; box-shadow: 0 1px 3px rgba(0, 21, 41, .14); }
