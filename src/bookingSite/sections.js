@@ -1,20 +1,20 @@
 export const defaultNav = [
   { section: 'top', label: 'หน้าแรก', show: true },
-  { section: 'rooms', label: 'บริการ', show: true },
+  { section: 'rooms', label: 'ห้องพัก', show: true },
   { section: 'news', label: 'รีวิว', show: true },
   { section: 'promo', label: 'โปรโมชั่น', show: true },
   { section: 'dining', label: 'บรรยากาศ', show: false },
-  { section: 'about', label: 'ที่อยู่ร้าน', show: true },
+  { section: 'about', label: 'ที่อยู่', show: true },
   { section: 'book', label: 'จองเลย', show: true },
   { section: 'contact', label: 'ติดต่อ', show: false }
 ]
 
 export const navSectionOptions = [
   ['top', 'หน้าแรก'],
-  ['rooms', 'บริการ (การ์ด)'],
+  ['rooms', 'ห้องพัก (การ์ด)'],
   ['news', 'รีวิว'],
   ['promo', 'โปรโมชั่น'],
-  ['about', 'ที่อยู่ร้าน'],
+  ['about', 'ที่อยู่โรงแรม'],
   ['book', 'จองเลย (ลิงก์จอง)'],
   ['dining', 'บรรยากาศ / สิ่งอำนวยความสะดวก'],
   ['contact', 'ติดต่อ (ท้ายหน้า)']

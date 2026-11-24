@@ -20,8 +20,28 @@ let timer
 let prevTitle = ''
 
 const toLocalYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+function addDays(ymd, days) {
+  const [y, m, d] = String(ymd || '').split('-').map(Number)
+  const date = new Date(y, (m || 1) - 1, d || 1)
+  date.setDate(date.getDate() + days)
+  return toLocalYmd(date)
+}
 const todayYmd = computed(() => toLocalYmd(new Date()))
-const day = ref(toLocalYmd(new Date()))
+const checkIn = ref(todayYmd.value)
+const checkOut = ref(addDays(todayYmd.value, 1))
+const adults = ref(1)
+const children = ref(0)
+const rooms = ref(1)
+const minCheckOut = computed(() => addDays(checkIn.value || todayYmd.value, 1))
+
+watch(checkIn, (value) => {
+  if (!value) return
+  if (!checkOut.value || checkOut.value <= value) checkOut.value = addDays(value, 1)
+})
+watch(rooms, (value) => {
+  const count = Math.max(1, Number(value) || 1)
+  if (adults.value < count) adults.value = count
+})
 
 const h = computed(() => c.value.hero[cur.value] || c.value.hero[0])
 const tg = computed(() => (c.value.site.newTab ? '_blank' : '_self'))
@@ -40,6 +60,37 @@ const slideCopyStyle = computed(() => {
   return s
 })
 const bg = u => (u ? { background: `url("${img(u)}") center/cover` } : null)
+function youtubeId(url) {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.replace(/^www\./, '')
+    if (host === 'youtu.be') return parsed.pathname.slice(1).split('/')[0]
+    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      if (parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/')[2] || ''
+      if (parsed.pathname.startsWith('/shorts/')) return parsed.pathname.split('/')[2] || ''
+      return parsed.searchParams.get('v') || ''
+    }
+  } catch {
+    return ''
+  }
+  return ''
+}
+function slideVideo(slide) {
+  const value = String(slide?.video || '').trim()
+  if (!value || slide?.showVideo === false) return null
+  const id = youtubeId(value)
+  if (id) {
+    return { kind: 'youtube', src: `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&rel=0&playsinline=1&modestbranding=1` }
+  }
+  return { kind: 'file', src: img(value) }
+}
+function syncSlideVideos() {
+  document.querySelectorAll('.booking-site .slide-video').forEach((el) => {
+    const active = el.closest('.slide')?.classList.contains('on')
+    if (active) el.play().catch(() => {})
+    else el.pause()
+  })
+}
 const showImg = o => o?.showImage !== false
 const itemBg = o => (showImg(o) && o?.image ? bg(o.image) : null)
 const promoBoxStyle = p => {
@@ -60,7 +111,16 @@ const roomCardStyle = r => {
   if (l) s['--room-link'] = l
   return Object.keys(s).length ? s : null
 }
-const book = link => bookingLink(link || c.value.site.bookingUrl)
+function stayQuery() {
+  return {
+    checkIn: checkIn.value,
+    checkOut: checkOut.value,
+    adults: Math.max(1, Number(adults.value) || 1),
+    children: Math.max(0, Number(children.value) || 0),
+    rooms: Math.max(1, Number(rooms.value) || 1),
+  }
+}
+const book = link => bookingLink(link || c.value.site.bookingUrl, stayQuery())
 
 const trim = v => String(v || '').trim()
 const shopAddress = computed(() => [trim(c.value?.site?.address), trim(c.value?.location?.addressDetail)].filter(Boolean).join('\n'))
@@ -85,8 +145,10 @@ const aboutMedia = computed(() => {
   return null
 })
 function search() {
-  const date = (day.value || '').trim()
-  const u = bookingLink(c.value.site.bookingUrl, date ? { date } : {})
+  if (!checkIn.value || !checkOut.value || checkOut.value <= checkIn.value) {
+    checkOut.value = addDays(checkIn.value || todayYmd.value, 1)
+  }
+  const u = book()
   if (c.value.site.newTab) window.open(u, '_blank', 'noopener')
   else location.href = u
 }
@@ -106,6 +168,7 @@ function play() {
 }
 const toggle = () => { paused.value = !paused.value; play() }
 const pick = i => { cur.value = i; paused.value = true; play() }
+watch(cur, () => nextTick(syncSlideVideos))
 
 function onMenuClick(section) {
   menuOpen.value = false
@@ -171,7 +234,26 @@ onUnmounted(() => {
         >{{ n.label }}</a>
       </nav>
 
-      <div v-for="(s, i) in c.hero" :key="i" class="slide" :class="['g' + (i % 4), { on: i === cur }]" :style="itemBg(s)"></div>
+      <div v-for="(s, i) in c.hero" :key="i" class="slide" :class="['g' + (i % 4), { on: i === cur }]" :style="itemBg(s)">
+        <video
+          v-if="slideVideo(s)?.kind === 'file'"
+          class="slide-video"
+          :src="slideVideo(s).src"
+          :poster="s.image ? img(s.image) : undefined"
+          muted
+          loop
+          playsinline
+          @loadeddata="syncSlideVideos"
+        />
+        <iframe
+          v-else-if="i === cur && slideVideo(s)?.kind === 'youtube'"
+          class="slide-embed"
+          :src="slideVideo(s).src"
+          title="วิดีโอพื้นหลัง"
+          allow="autoplay; encrypted-media"
+          referrerpolicy="strict-origin-when-cross-origin"
+        />
+      </div>
 
       <div class="copy" :style="slideCopyStyle">
         <h1>{{ h.title }}</h1>
@@ -182,10 +264,26 @@ onUnmounted(() => {
       <div class="barwrap">
         <form v-if="showHeroBooking" class="bar" @submit.prevent="search">
           <div>
-            <label for="hero-date">เลือกวัน</label>
-            <input id="hero-date" type="date" v-model="day" :min="todayYmd" required>
+            <label for="hero-check-in">เช็คอิน</label>
+            <input id="hero-check-in" type="date" v-model="checkIn" :min="todayYmd" required>
           </div>
-          <button class="go" type="submit">{{ c.site.bookingLabel || 'จองคิว' }}</button>
+          <div>
+            <label for="hero-check-out">เช็คเอาต์</label>
+            <input id="hero-check-out" type="date" v-model="checkOut" :min="minCheckOut" required>
+          </div>
+          <div>
+            <label for="hero-adults">ผู้ใหญ่</label>
+            <input id="hero-adults" type="number" v-model.number="adults" :min="rooms" max="30" required>
+          </div>
+          <div>
+            <label for="hero-children">เด็ก</label>
+            <input id="hero-children" type="number" v-model.number="children" min="0" max="30">
+          </div>
+          <div>
+            <label for="hero-rooms">จำนวนห้อง</label>
+            <input id="hero-rooms" type="number" v-model.number="rooms" min="1" max="10" required>
+          </div>
+          <button class="go" type="submit">ค้นหาห้องว่าง</button>
         </form>
         <button class="pause" type="button" :class="{ off: paused }" :aria-label="paused ? 'เล่นสไลด์' : 'หยุดสไลด์'" @click="toggle"></button>
       </div>
@@ -199,7 +297,7 @@ onUnmounted(() => {
     <template v-for="sec in pageSections" :key="sec">
       <section v-if="sec === 'about' && isSectionVisible(c, 'about', showImg)" id="about" class="about place" :class="{ solo: !aboutMedia, 'img-first': c.about?.imageFirst }">
         <div class="about-copy">
-          <h2>{{ c.about.title || 'ที่อยู่ร้าน' }}</h2>
+          <h2>{{ c.about.title || 'ที่อยู่โรงแรม' }}</h2>
           <p v-if="c.about.text" class="lead">{{ c.about.text }}</p>
           <dl class="place-info">
             <div v-if="shopAddress"><dt>ที่อยู่</dt><dd>{{ shopAddress }}</dd></div>
@@ -208,18 +306,18 @@ onUnmounted(() => {
           </dl>
           <div class="place-actions">
             <a v-if="mapUrl" class="btn" :href="mapUrl" target="_blank" rel="noopener">{{ c.location?.openMapsLabel || 'เปิดใน Google Maps' }}</a>
-            <a class="link" :href="book()" :target="tg" rel="noopener">{{ c.site.bookingLabel || 'จองคิว' }}</a>
+            <a class="link" :href="book()" :target="tg" rel="noopener">{{ c.site.bookingLabel || 'จองห้อง' }}</a>
           </div>
         </div>
         <div v-if="aboutMedia === 'map'" class="place-map">
-          <iframe :src="mapEmbed" :title="'แผนที่ ' + (c.site.name || 'ร้าน')" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+          <iframe :src="mapEmbed" :title="'แผนที่ ' + (c.site.name || 'โรงแรม')" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
         </div>
         <div v-else-if="aboutMedia === 'image'" class="img" :style="bg(c.about.image)"></div>
       </section>
 
       <section v-else-if="sec === 'rooms' && isSectionVisible(c, 'rooms', showImg)" id="rooms">
-        <LoopCarousel :items="c.rooms" :min-loop="3" :label="c.roomsHeading || 'บริการ'">
-          <template #head><h2>{{ c.roomsHeading || 'บริการ' }}</h2></template>
+        <LoopCarousel :items="c.rooms" :min-loop="3" :label="c.roomsHeading || 'ห้องพัก'">
+          <template #head><h2>{{ c.roomsHeading || 'ห้องพัก' }}</h2></template>
           <template #default="{ item: r, index: i }">
             <article class="card" :class="{ 'card--icon': !(showImg(r) && r.image) }" :style="roomCardStyle(r)">
               <div v-if="showImg(r) && r.image" class="img" :style="bg(r.image)"></div>
@@ -263,8 +361,8 @@ onUnmounted(() => {
 
     <footer id="contact">
       <div><b>{{ c.site.name }}</b>{{ c.site.address }}<br>{{ c.site.phone }} · {{ c.site.email }}</div>
-      <div><b>เมนู</b>บริการ<br>รีวิว<br>โปรโมชั่น<br>ที่อยู่ร้าน</div>
-      <div><b>จองคิว</b><a class="link" :href="book()" :target="tg" rel="noopener">ไปที่หน้าจอง</a></div>
+      <div><b>เมนู</b>ห้องพัก<br>รีวิว<br>โปรโมชั่น<br>ที่อยู่</div>
+      <div><b>จองห้อง</b><a class="link" :href="book()" :target="tg" rel="noopener">ไปที่หน้าจอง</a></div>
     </footer>
   </div>
 </template>

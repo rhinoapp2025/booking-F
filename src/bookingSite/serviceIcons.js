@@ -1,27 +1,27 @@
 export const SERVICE_ICONS = [
-  ['palette', 'ทาสี / เจล'],
-  ['brush', 'เพ้นท์ลาย'],
-  ['sparkles', 'กากเพชร / วิบวับ'],
-  ['diamond', 'ติดเพชร / อะไหล่'],
-  ['hand-stop', 'ดูแลมือ'],
-  ['droplet', 'สปา / บำรุง'],
+  ['palette', 'ตกแต่งห้อง'],
+  ['brush', 'สไตล์ห้อง'],
+  ['sparkles', 'วิวพิเศษ'],
+  ['diamond', 'สวีท'],
+  ['hand-stop', 'เช็คอิน'],
+  ['droplet', 'อ่าง / สปา'],
   ['massage', 'นวด'],
-  ['leaf', 'ธรรมชาติ / ออร์แกนิก'],
-  ['flower', 'ลายดอกไม้'],
-  ['wand', 'ทรีทเมนต์ / ลิฟติ้ง'],
-  ['eye', 'ขนตา'],
-  ['mood-smile', 'คิ้ว / ใบหน้า'],
-  ['scissors', 'ตัด / ตกแต่ง'],
+  ['leaf', 'ธรรมชาติ'],
+  ['flower', 'สวน / ดอกไม้'],
+  ['wand', 'บริการในห้อง'],
+  ['eye', 'วิว'],
+  ['mood-smile', 'ครอบครัว'],
+  ['scissors', 'บริการเสริม'],
   ['crown', 'พรีเมียม'],
   ['heart', 'ยอดนิยม'],
-  ['gift', 'แพ็กเกจ / ของขวัญ']
+  ['gift', 'แพ็กเกจ']
 ]
 
 export const MORE_SERVICE_ICONS = [
-  ['paint', 'ทาสีพื้น'],
+  ['paint', 'โทนสีห้อง'],
   ['color-swatch', 'เฉดสี'],
   ['color-picker', 'เลือกสี'],
-  ['bottle', 'ขวดสีเล็บ'],
+  ['bottle', 'มินิบาร์'],
   ['spray', 'สเปรย์'],
   ['highlight', 'ไฮไลต์ / เคลือบ'],
   ['pencil', 'ดินสอ / เขียนคิ้ว'],
@@ -92,26 +92,24 @@ export const MORE_SERVICE_ICONS = [
   ['cake', 'วันเกิด'],
   ['balloon', 'ฉลอง'],
   ['confetti', 'ปาร์ตี้'],
-  ['camera', 'ถ่ายรูปผลงาน']
+  ['camera', 'รูปห้อง']
 ]
 
 const KNOWN = new Set([...SERVICE_ICONS, ...MORE_SERVICE_ICONS].map(([id]) => id))
 export const isMoreIcon = id => MORE_SERVICE_ICONS.some(([x]) => x === id)
 
 const GUESS = [
-  [/เพ้นท์|ลาย|art|paint/i, 'brush'],
-  [/เพชร|อะไหล่|ประดับ|diamond|gem/i, 'diamond'],
+  [/สวีท|suite|deluxe|ดีลักซ์/i, 'diamond'],
+  [/วิว|view|ทะเล|เมือง/i, 'eye'],
+  [/สปา|อ่าง|spa|bath/i, 'droplet'],
   [/นวด|massage/i, 'massage'],
-  [/สปา|บำรุง|spa/i, 'droplet'],
-  [/ขนตา|lash/i, 'eye'],
-  [/คิ้ว|brow/i, 'mood-smile'],
-  [/ตัด|ผม|hair|cut/i, 'scissors'],
-  [/ลิฟ|ทรีทเมนต์|lift|treat/i, 'wand'],
-  [/เจล|ทาสี|สีเล็บ|gel|polish|colou?r/i, 'palette'],
-  [/มือ|hand|manicure/i, 'hand-stop']
+  [/ครอบครัว|family/i, 'mood-smile'],
+  [/อาหาร|ร้านอาหาร|dining|breakfast/i, 'cake'],
+  [/สวน|ธรรมชาติ|garden/i, 'leaf'],
+  [/พรีเมียม|premium/i, 'crown']
 ]
 
-const FALLBACK = ['palette', 'sparkles', 'droplet', 'brush', 'diamond', 'flower']
+const FALLBACK = ['crown', 'sparkles', 'droplet', 'heart', 'star', 'gift']
 
 /** ไอคอนที่ตั้งไว้ (ต้องอยู่ในชุดที่อนุญาต) หรือเดาจากชื่อ/รายละเอียดบริการ */
 export function serviceIcon(room, index = 0) {

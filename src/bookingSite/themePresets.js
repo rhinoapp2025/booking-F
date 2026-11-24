@@ -3,7 +3,7 @@ import { FONT_STACKS } from './fonts.js'
 
 export { FONT_STACKS }
 
-export const DEFAULT_PRESET_ID = 'rose-blush'
+export const DEFAULT_PRESET_ID = 'nude-minimal'
 
 export const MATCH_KEYS = [
   'bg', 'ink', 'mute', 'gold', 'phFrom', 'phTo',
@@ -23,7 +23,7 @@ export const THEME_PRESETS = [
     id: 'midnight-gold',
     name: 'Midnight Gold',
     nameTh: 'หรูมืด',
-    blurb: 'ดำ–น้ำตาลทอง บรรยากาศไนท์สตูดิโอ',
+    blurb: 'ดำ–น้ำตาลทอง โรงแรมโทนมืด',
     swatches: ['#070605', '#f4efe8', '#b9afa2', '#d8b98a', '#6a4a2b'],
     theme: pack({
       bg: '#070605',
@@ -61,7 +61,7 @@ export const THEME_PRESETS = [
     id: 'rose-blush',
     name: 'Rose Blush',
     nameTh: 'ชมพูพาสเทล',
-    blurb: 'ครีมอ่อน–ชมพู หวาน น่ารัก ร้านเล็บสาวๆ',
+    blurb: 'ครีมอ่อน–ชมพู โทนอบอุ่น',
     swatches: ['#fbf4f1', '#3a2428', '#7a4e56', '#c45c78', '#f3d9d4'],
     theme: pack({
       bg: '#fbf4f1',

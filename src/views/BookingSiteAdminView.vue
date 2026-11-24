@@ -35,7 +35,7 @@ const S = {
         shortTitle: 'ฟอนต์',
         title: 'ฟอนต์ทั้งเว็บ',
         hint: 'กดเลือกฟอนต์ด้านล่างเพื่อใช้ทั้งเว็บ (หัวข้อและเนื้อหา) หรือปรับแยกได้ในช่องด้านล่างสุด — กดบันทึกทั้งหมดเพื่อใช้บนหน้าเว็บ · ฟอนต์ที่เขียน «อังกฤษ» ไม่มีตัวไทย ตัวไทยจะใช้ฟอนต์สำรองแทน',
-        fields: [['serif', 'ฟอนต์หัวข้อ (ชื่อร้าน หัวข้อใหญ่ หัวข้อแต่ละส่วน)', 'font'], ['sans', 'ฟอนต์เนื้อหา (ข้อความ เมนู ปุ่ม)', 'font']]
+        fields: [['serif', 'ฟอนต์หัวข้อ (ชื่อโรงแรม หัวข้อใหญ่ หัวข้อแต่ละส่วน)', 'font'], ['sans', 'ฟอนต์เนื้อหา (ข้อความ เมนู ปุ่ม)', 'font']]
       },
       {
         id: 'colors-base',
@@ -45,11 +45,11 @@ const S = {
       },
       {
         id: 'colors-rooms',
-        shortTitle: 'สีบริการ',
-        title: 'สีข้อความบริการ',
-        hint: 'สีบนการ์ดบริการ — ว่าง = ใช้สีหลัก/สีรองของไซต์ · แต่ละรายการในแท็บบริการทับค่านี้ได้',
+        shortTitle: 'สีห้องพัก',
+        title: 'สีข้อความห้องพัก',
+        hint: 'สีบนการ์ดห้องพัก — ว่าง = ใช้สีหลัก/สีรองของไซต์ · แต่ละห้องทับค่านี้ได้',
         fields: [
-          ['roomTitle', 'ชื่อบริการ (ว่าง = สีตัวอักษร)', 'color'],
+          ['roomTitle', 'ชื่อห้อง (ว่าง = สีตัวอักษร)', 'color'],
           ['roomText', 'รายละเอียด (ว่าง = สีตัวอักษรรอง)', 'color'],
           ['roomLink', 'ลิงก์จองเลย (ว่าง = สีตัวอักษร)', 'color']
         ]
@@ -102,9 +102,9 @@ const S = {
       }
     ]
   },
-  hero: { label: 'Hero (สไลด์หน้าแรก)', list: true, fields: [['tab', 'ชื่อแท็บด้านล่าง'], ['title', 'หัวข้อใหญ่'], ['titleColor', 'สีหัวข้อใหญ่ (ว่าง = ตามธีม)', 'color'], ['text', 'ข้อความ', 'area'], ['textColor', 'สีข้อความรอง (ว่าง = ตามธีม)', 'color'], ['button', 'ข้อความบนปุ่ม (ว่าง = ไม่แสดงปุ่ม)'], ['link', 'ลิงก์ปุ่ม (ว่าง = ใช้ลิงก์จองหลัก)', 'url'], ['showBooking', 'แสดงแถบเลือกวันและจองคิว', 'bool'], ['showImage', 'แสดงรูปพื้นหลัง', 'bool'], ['image', 'รูปพื้นหลัง', 'image']] },
-  about: { label: 'ที่อยู่ร้าน', hint: 'ส่วนนี้อยู่ท้ายหน้าเว็บ — ที่อยู่ เบอร์โทร อีเมล ดึงจากแท็บ «ตั้งค่าทั่วไป» · ลิงก์ Google Maps: เปิด Google Maps → แชร์ → คัดลอกลิงก์ แล้ววางด้านล่าง กดบันทึกแล้วระบบสร้างแผนที่ให้', fields: [['title', 'หัวข้อ'], ['text', 'ข้อความสั้น (เช่น วิธีเดินทาง ที่จอดรถ)', 'area'], ['mapUrl', 'ลิงก์ Google Maps (ว่าง = ใช้ลิงก์จากแอดมินร้าน ถ้ามี)', 'url'], ['showMap', 'แสดงแผนที่ Google Maps', 'bool'], ['showImage', 'แสดงรูป (ใช้เมื่อไม่มีแผนที่)', 'bool'], ['imageFirst', 'แผนที่ / รูปอยู่ด้านซ้าย (ปิด = ข้อความซ้าย)', 'bool'], ['image', 'รูป', 'image']] },
-  rooms: { label: 'บริการ', list: true, prefixRoot: [['roomsHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['name', 'ชื่อรายการ'], ['type', 'รหัสโฟลเดอร์รูป (a-z 0-9 - _ เช่น classic)'], ['detail', 'รายละเอียดสั้น'], ['icon', 'ไอคอน (แสดงเมื่อไม่มีรูป — อัตโนมัติ = เลือกจากชื่อบริการ)', 'icon'], ['titleColor', 'สีชื่อบริการ (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียด (ว่าง = ตามธีม)', 'color'], ['linkColor', 'สีลิงก์จองเลย (ว่าง = ตามธีม)', 'color'], ['showImage', 'ใช้รูปแทนไอคอน (ถ้าอัปโหลดรูปไว้)', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจองของรายการนี้ (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
+  hero: { label: 'Hero (สไลด์หน้าแรก)', list: true, fields: [['tab', 'ชื่อแท็บด้านล่าง'], ['title', 'หัวข้อใหญ่'], ['titleColor', 'สีหัวข้อใหญ่ (ว่าง = ตามธีม)', 'color'], ['text', 'ข้อความ', 'area'], ['textColor', 'สีข้อความรอง (ว่าง = ตามธีม)', 'color'], ['button', 'ข้อความบนปุ่ม (ว่าง = ไม่แสดงปุ่ม)'], ['link', 'ลิงก์ปุ่ม (ว่าง = ใช้ลิงก์จองหลัก)', 'url'], ['showBooking', 'แสดงแถบเช็คอิน เช็คเอาต์ และค้นหาห้อง', 'bool'], ['showImage', 'แสดงรูปพื้นหลัง', 'bool'], ['image', 'รูปพื้นหลัง', 'image'], ['showVideo', 'ใช้วิดีโอเป็นพื้นหลัง', 'bool'], ['video', 'วิดีโอพื้นหลัง (mp4, webm หรือลิงก์ YouTube)', 'video']] },
+  about: { label: 'ที่อยู่โรงแรม', hint: 'ส่วนนี้อยู่ท้ายหน้าเว็บ — ที่อยู่ เบอร์โทร อีเมล ดึงจากแท็บ «ตั้งค่าทั่วไป» · ลิงก์ Google Maps: เปิด Google Maps → แชร์ → คัดลอกลิงก์ แล้ววางด้านล่าง กดบันทึกแล้วระบบสร้างแผนที่ให้', fields: [['title', 'หัวข้อ'], ['text', 'ข้อความสั้น (เช่น วิธีเดินทาง ที่จอดรถ)', 'area'], ['mapUrl', 'ลิงก์ Google Maps (ว่าง = ใช้ลิงก์จากแอดมินโรงแรม ถ้ามี)', 'url'], ['showMap', 'แสดงแผนที่ Google Maps', 'bool'], ['showImage', 'แสดงรูป (ใช้เมื่อไม่มีแผนที่)', 'bool'], ['imageFirst', 'แผนที่ / รูปอยู่ด้านซ้าย (ปิด = ข้อความซ้าย)', 'bool'], ['image', 'รูป', 'image']] },
+  rooms: { label: 'ห้องพัก', list: true, prefixRoot: [['roomsHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['name', 'ชื่อห้อง'], ['type', 'รหัสโฟลเดอร์รูป (a-z 0-9 - _ เช่น deluxe)'], ['detail', 'รายละเอียดสั้น'], ['icon', 'ไอคอน (แสดงเมื่อไม่มีรูป)', 'icon'], ['titleColor', 'สีชื่อห้อง (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียด (ว่าง = ตามธีม)', 'color'], ['linkColor', 'สีลิงก์จองเลย (ว่าง = ตามธีม)', 'color'], ['showImage', 'ใช้รูปแทนไอคอน (ถ้าอัปโหลดรูปไว้)', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจองของห้องนี้ (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
   promos: { label: 'โปรโมชั่น', list: true, prefixRoot: [['promosHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['title', 'หัวข้อ'], ['text', 'รายละเอียด', 'area'], ['titleColor', 'สีหัวข้อบนรูป (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียดบนรูป (ว่าง = ตามธีม)', 'color'], ['showImage', 'แสดงรูป', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจอง (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
   dining: { label: 'บรรยากาศ / สิ่งอำนวยความสะดวก', fields: [['title', 'หัวข้อ'], ['text', 'ข้อความ', 'area'], ['showImage', 'แสดงรูป', 'bool'], ['imageFirst', 'รูปอยู่ด้านซ้าย (ปิด = ข้อความซ้าย รูปขวา)', 'bool'], ['image', 'รูป', 'image']] },
   news: { label: 'รีวิว', list: true, prefixRoot: [['newsHeading', 'หัวข้อด้านบน (เช่น รีวิว)'], ['newsShowImage', 'แสดงรูปใต้หัวข้อ', 'bool'], ['newsImage', 'รูปใต้หัวข้อ', 'image']], fields: [['date', 'วันที่'], ['title', 'หัวข้อรีวิว'], ['showImage', 'แสดงรูป', 'bool'], ['image', 'รูป', 'image']] }
@@ -194,7 +194,7 @@ async function pick(o, k, e) {
   const f = e.target.files[0]; if (!f) return
   const fo = folderOf(o)
   if (!okFolder(fo)) { msg.value = 'กรอกรหัสโฟลเดอร์รูปก่อน (a-z 0-9 - _)'; e.target.value = ''; return }
-  msg.value = 'กำลังอัปโหลดรูป...'
+  msg.value = /^video\//i.test(f.type) || /\.(mp4|webm)$/i.test(f.name) ? 'กำลังอัปโหลดวิดีโอ...' : 'กำลังอัปโหลดรูป...'
   try { o[k] = (await upload(shopSlug.value, f, fo)).url; msg.value = 'อัปโหลดแล้ว อย่าลืมกดบันทึก' } catch (err) { msg.value = err.message }
   e.target.value = ''
 }
@@ -310,7 +310,7 @@ onMounted(async () => {
       <b>เว็บไซต์ · {{ shopSlug }}</b>
       <button v-for="(s, k) in S" :key="k" type="button" :class="{ on: tab === k }" @click="tab = k">{{ s.label }}</button>
       <a :href="publicSitePath" target="_blank" rel="noopener">ดูหน้าเว็บ</a>
-      <a :href="shopAdminPath">กลับแอดมินร้าน</a>
+      <a :href="shopAdminPath">กลับแอดมินโรงแรม</a>
     </aside>
     <main>
       <header>
@@ -341,9 +341,9 @@ onMounted(async () => {
           <p class="theme-group-hint">{{ activeThemeGroup.hint }}</p>
           <div class="theme-live" ref="livePreviewEl" aria-label="ตัวอย่างธีมบนหน้าเว็บ">
             <div class="theme-live-hero">
-              <b>เล็บสวยแบบจองคิวได้</b>
+              <b>เข้าพักสบาย จองได้เลย</b>
               <p>ตัวอย่างหน้าแรกตามธีมที่ใช้อยู่</p>
-              <span class="btn">จองคิว</span>
+              <span class="btn">จองห้อง</span>
             </div>
           </div>
           <p v-if="dirty" class="preset-using">ยังไม่ได้บันทึก — หน้าเว็บยังเป็นธีมเก่าจนกว่าจะกดบันทึกทั้งหมด</p>
@@ -361,8 +361,8 @@ onMounted(async () => {
               <h3>{{ preset.name }} <small>{{ preset.nameTh }}</small></h3>
               <p>{{ preset.blurb }}</p>
               <div class="preset-mock" :style="presetMock(preset)">
-                <b :style="{ color: preset.theme.roomTitle, fontFamily: preset.theme.serif }">ทาสีเจลมือ</b>
-                <em :style="{ color: preset.theme.roomText }">ทำความสะอาดเล็บ · 60 นาที</em>
+                <b :style="{ color: preset.theme.roomTitle, fontFamily: preset.theme.serif }">ห้องดีลักซ์</b>
+                <em :style="{ color: preset.theme.roomText }">เตียงคิง · วิวเมือง</em>
                 <span :style="{ background: preset.theme.heroBtnBg, color: preset.theme.heroBtnText, borderRadius: preset.theme.radius }">จองเลย</span>
               </div>
               <small v-if="activePresetId === preset.id" class="preset-status">กำลังใช้ธีมนี้</small>
@@ -376,8 +376,8 @@ onMounted(async () => {
           <p v-if="activeThemeGroup.hint" class="theme-group-hint">{{ activeThemeGroup.hint }}</p>
           <template v-if="activeThemeGroup.id === 'fonts'">
             <div class="font-preview" aria-label="ตัวอย่างฟอนต์">
-              <b>เล็บสวยแบบจองคิวได้ · Nail Studio</b>
-              <p>ทาสีเจล เติมเล็บ และสปา จองคิวล่วงหน้าได้ ไม่ต้องรอที่ร้าน 0123456789</p>
+              <b>เข้าพักสบาย · โรงแรม</b>
+              <p>เลือกวันเช็คอิน เช็คเอาต์ แล้วจองห้องโดยตรงกับโรงแรม 02-000-0000</p>
             </div>
             <div class="font-grid" role="radiogroup" aria-label="ฟอนต์ทั้งเว็บ">
               <button
@@ -391,7 +391,7 @@ onMounted(async () => {
                 :style="{ fontFamily: f.value }"
                 @click="c.theme.serif = f.value; c.theme.sans = f.value"
               >
-                <span class="font-sample">ร้านเล็บสวย Aa</span>
+                <span class="font-sample">โรงแรม Aa</span>
                 <small>{{ f.label }}</small>
               </button>
             </div>
@@ -463,7 +463,7 @@ onMounted(async () => {
             </template>
             <textarea v-else-if="f[2] === 'area'" v-model="o[f[0]]" rows="4"></textarea>
             <input v-else-if="f[2] === 'bool' && f[0] === 'imageFirst'" type="checkbox" :checked="tab === 'dining' ? o[f[0]] !== false : !!o[f[0]]" @change="o[f[0]] = $event.target.checked">
-            <input v-else-if="f[2] === 'bool' && (f[0] === 'showImage' || f[0] === 'showMap' || f[0] === 'showBooking' || f[0] === 'heroOverlay' || f[0] === 'lightEnhance' || f[0] === 'darkEnhance')" type="checkbox" :checked="o[f[0]] !== false" @change="o[f[0]] = $event.target.checked">
+            <input v-else-if="f[2] === 'bool' && (f[0] === 'showImage' || f[0] === 'showVideo' || f[0] === 'showMap' || f[0] === 'showBooking' || f[0] === 'heroOverlay' || f[0] === 'lightEnhance' || f[0] === 'darkEnhance')" type="checkbox" :checked="o[f[0]] !== false" @change="o[f[0]] = $event.target.checked">
             <input v-else-if="f[2] === 'bool'" type="checkbox" v-model="o[f[0]]">
             <span v-else-if="f[2] === 'image'" class="img">
               <img v-if="o[f[0]]" :src="img(o[f[0]])" alt="">
@@ -472,6 +472,12 @@ onMounted(async () => {
               <input v-model="o[f[0]]" placeholder="หรือวางลิงก์รูป (ว่าง = ใช้สีพื้นหลังตัวอย่าง)">
               <button type="button" @click="openGal(o, f[0], i)">เลือกจากรูปที่มีในโฟลเดอร์นี้</button>
               <span v-if="gal.key === tab + i + f[0]" class="gal"><em v-if="!gal.files.length">ยังไม่มีรูปในโฟลเดอร์นี้</em><img v-for="u in gal.files" :key="u" :src="img(u)" alt="" @click="choose(o, f[0], u)"></span>
+            </span>
+            <span v-else-if="f[2] === 'video'" class="img">
+              <video v-if="o[f[0]] && !/youtu(\.be|be\.com)/i.test(o[f[0]])" :src="img(o[f[0]])" muted playsinline controls></video>
+              <small class="hint">ไฟล์ไม่เกิน 12MB หรือวางลิงก์ mp4, webm, YouTube</small>
+              <input type="file" accept="video/mp4,video/webm,.mp4,.webm" @change="pick(o, f[0], $event)">
+              <input v-model="o[f[0]]" placeholder="หรือวางลิงก์วิดีโอ">
             </span>
             <select v-else-if="f[2] === 'select'" v-model="o[f[0]]">
               <option v-for="opt in navSectionOptions" :key="opt[0]" :value="opt[0]">{{ opt[1] }}</option>

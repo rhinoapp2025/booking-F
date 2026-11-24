@@ -4,7 +4,7 @@ export const FONT_STACKS = [
   { id: 'kanit', label: 'Kanit (ทันสมัย)', value: '"Kanit","Noto Sans Thai",sans-serif', family: 'Kanit', google: 'Kanit:wght@300;400;500;600' },
   { id: 'prompt', label: 'Prompt (สะอาด)', value: '"Prompt","Noto Sans Thai",sans-serif', family: 'Prompt', google: 'Prompt:wght@300;400;500;600' },
   { id: 'sarabun', label: 'Sarabun (มินิมอล)', value: '"Sarabun","Noto Sans Thai",sans-serif', family: 'Sarabun', google: 'Sarabun:wght@300;400;500;600' },
-  { id: 'mitr', label: 'Mitr (สปา)', value: '"Mitr","Noto Sans Thai",sans-serif', family: 'Mitr', google: 'Mitr:wght@300;400;500;600' },
+  { id: 'mitr', label: 'Mitr (ผ่อนคลาย)', value: '"Mitr","Noto Sans Thai",sans-serif', family: 'Mitr', google: 'Mitr:wght@300;400;500;600' },
   { id: 'ibm', label: 'IBM Plex Sans Thai (มืออาชีพ)', value: '"IBM Plex Sans Thai","Noto Sans Thai",sans-serif', family: 'IBM Plex Sans Thai', google: 'IBM+Plex+Sans+Thai:wght@300;400;500;600' },
   { id: 'anuphan', label: 'Anuphan (โมเดิร์น)', value: '"Anuphan","Noto Sans Thai",sans-serif', family: 'Anuphan', google: 'Anuphan:wght@300;400;500;600' },
   { id: 'bai', label: 'Bai Jamjuree (เรียบเท่)', value: '"Bai Jamjuree","Noto Sans Thai",sans-serif', family: 'Bai Jamjuree', google: 'Bai+Jamjuree:wght@300;400;500;600' },

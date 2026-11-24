@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { defaultTheme } from './theme.js'
 import { THEME_PRESETS, matchingPresetId, applyPresetTheme, contrastRatio, DEFAULT_PRESET_ID } from './themePresets.js'
 
-test('product default theme is Rose Blush', () => {
-  assert.equal(DEFAULT_PRESET_ID, 'rose-blush')
+test('hotel reset preset is the calm minimal theme', () => {
+  assert.equal(DEFAULT_PRESET_ID, 'nude-minimal')
   assert.equal(matchingPresetId(defaultTheme), 'rose-blush')
 })
 

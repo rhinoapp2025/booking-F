@@ -65,8 +65,19 @@ async function filePayload(file) {
   return { image_data: base64, image_mime: mime }
 }
 
+async function videoPayload(file) {
+  if (file.size > 12 * 1024 * 1024) throw new Error('วิดีโอใหญ่เกิน 12MB')
+  const dataUrl = await readAsDataUrl(file)
+  const base64 = dataUrl.split(',')[1] || ''
+  const mime = /^video\/(mp4|webm)$/i.test(file.type)
+    ? file.type
+    : (/\.webm$/i.test(file.name) ? 'video/webm' : 'video/mp4')
+  return { image_data: base64, image_mime: mime }
+}
+
 export async function upload(slug, file, folder) {
-  const payload = await filePayload(file)
+  const isVideo = /^video\//i.test(file.type) || /\.(mp4|webm)$/i.test(file.name)
+  const payload = isVideo ? await videoPayload(file) : await filePayload(file)
   const { data } = await api.post(
     `/api/admin/${encodeURIComponent(slug)}/booking-site/upload/${encodeURIComponent(folder)}`,
     payload,
