@@ -39,6 +39,30 @@ function hotelPage(template, { title, description, image, url, favicon, apple })
   return html.replace(/<\/title>/i, `</title>\n    ${tags}`)
 }
 
+const HOTEL_LIST_ATTEMPTS = 6
+const HOTEL_LIST_RETRY_MS = 5000
+
+// ตอน deploy หลังบ้านมักรีสตาร์ทพร้อมกับที่หน้าบ้าน build จึงต้องรอแล้วลองใหม่
+// ถ้าข้ามขั้นนี้ หน้าโรงแรมชุดเก่าบนเซิร์ฟเวอร์จะยังชี้ไฟล์ JS ของ build ก่อน
+async function fetchHotels(api) {
+  let lastError
+  for (let attempt = 1; attempt <= HOTEL_LIST_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(`${api}/api/hotels`, { signal: AbortSignal.timeout(10000) })
+      if (!response.ok) throw new Error(`hotel list ${response.status}`)
+      const data = await response.json()
+      return Array.isArray(data) ? data : []
+    } catch (err) {
+      lastError = err
+      if (attempt < HOTEL_LIST_ATTEMPTS) {
+        console.warn(`[share] hotel list attempt ${attempt} failed (${err.message}), retrying`)
+        await new Promise((done) => setTimeout(done, HOTEL_LIST_RETRY_MS))
+      }
+    }
+  }
+  throw lastError
+}
+
 export async function writeHotelSharePages(distDir) {
   const origin = (process.env.SITE_ORIGIN || 'https://theotel.app').replace(/\/$/, '')
   const api = (process.env.SHARE_API_BASE || process.env.VITE_API_BASE_URL || origin).replace(/\/$/, '')
@@ -52,12 +76,9 @@ export async function writeHotelSharePages(distDir) {
   }
   let hotels = []
   try {
-    const response = await fetch(`${api}/api/hotels`)
-    if (!response.ok) throw new Error(`hotel list ${response.status}`)
-    const data = await response.json()
-    hotels = Array.isArray(data) ? data : []
+    hotels = await fetchHotels(api)
   } catch (err) {
-    console.warn('[share] hotel list unavailable:', err.message)
+    console.warn('[share] hotel list unavailable, hotel pages NOT rewritten (old ones on the server keep the previous build):', err.message)
     return
   }
   let written = 0
