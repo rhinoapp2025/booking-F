@@ -267,6 +267,14 @@ const stayCharges = computed(() => applyStayCharges(staySubtotal.value, {
   vatPercent: bookingStore.vatPercent,
 }))
 const stayTotal = computed(() => stayCharges.value.total)
+const priceExcludesTaxNote = computed(() => {
+  const service = Number(bookingStore.serviceChargePercent) || 0
+  const vat = Number(bookingStore.vatPercent) || 0
+  if (service > 0 && vat > 0) return 'ราคานี้ไม่รวม VAT กับ Service'
+  if (service > 0) return 'ราคานี้ไม่รวม Service'
+  if (vat > 0) return 'ราคานี้ไม่รวม VAT'
+  return ''
+})
 const modalTitle = computed(() => (bookingStep.value === 'plan' ? 'เลือกเรทแพลน' : 'ยืนยันการจอง'))
 
 function roundMoney(n) {
@@ -419,6 +427,7 @@ function missingRequiredFieldLabel() {
   if (!guestSex.value) return 'เพศ'
   if (!guestFirstName.value.trim()) return 'ชื่อ'
   if (!guestLastName.value.trim()) return 'นามสกุล'
+  if (!guestPhone.value.trim()) return 'เบอร์โทรศัพท์'
   return ''
 }
 
@@ -462,7 +471,7 @@ async function confirmBooking() {
       guest_national_id: guestNationalId.value.trim() || undefined,
       guest_passport:  guestPassport.value.trim() || undefined,
       guest_birthday:  guestBirthday.value || undefined,
-      guest_phone:     guestPhone.value.trim() || undefined,
+      guest_phone:     guestPhone.value.trim(),
       guest_email:     guestEmail.value.trim() || undefined,
       guest_car_no:    guestCarNo.value.trim() || undefined,
       guest_address1:  guestAddress1.value.trim() || undefined,
@@ -1011,7 +1020,7 @@ onUnmounted(() => {
               <span class="summary-label">ราคารวม</span>
               <span class="summary-value price">฿{{ staySubtotal.toLocaleString() }}</span>
             </div>
-            <p class="price-note">ราคานี้ไม่รวม VAT กับ Service</p>
+            <p v-if="priceExcludesTaxNote" class="price-note">{{ priceExcludesTaxNote }}</p>
             <BookingPolicyNotes
               :cancellation-policy="hotelStore.hotel?.cancellation_policy"
               :non-smoking="Boolean(hotelStore.hotel?.non_smoking)"
@@ -1072,8 +1081,8 @@ onUnmounted(() => {
             </div>
             <div class="form-row-inline">
               <div class="form-row">
-                <label class="form-label">เบอร์โทรศัพท์</label>
-                <input v-model="guestPhone" type="tel" class="form-input" placeholder="0812345678" />
+                <label class="form-label">เบอร์โทรศัพท์ <span class="req">*</span></label>
+                <input v-model="guestPhone" type="tel" class="form-input" placeholder="0812345678" required />
               </div>
               <div class="form-row">
                 <label class="form-label">ทะเบียนรถ</label>
