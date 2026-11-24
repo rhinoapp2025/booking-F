@@ -76,6 +76,7 @@ const stopSale = reactive({
   date_from: localYmd(),
   date_to: addDaysLocal(localYmd(), 13),
   weekdays: [0, 1, 2, 3, 4, 5, 6],
+  action: 'stop',
   min_rooms: '',
 })
 const stopError = ref('')
@@ -487,6 +488,7 @@ function openStopForm() {
   stopSale.date_from = from.value
   stopSale.date_to = to.value
   stopSale.weekdays = [0, 1, 2, 3, 4, 5, 6]
+  stopSale.action = 'stop'
   stopSale.mode = 'room_type'
   stopSale.room_type_id = selectedTypeId.value || calendar.value.room_types[0]?.id || ''
   stopSale.rate_plan_id = selectedPlanId.value || ''
@@ -570,6 +572,49 @@ function validateDisplayScope() {
     return 'เลือกประเภทห้องและเรทแพลน'
   }
   return ''
+}
+
+async function submitDisplay() {
+  displayError.value = ''
+  displayMessage.value = ''
+  const scopeError = validateDisplayScope()
+  if (scopeError) {
+    displayError.value = scopeError
+    return
+  }
+  const hasPrice = String(displayPrice.value || '').trim() !== ''
+  const hasRooms = String(displayPrice.rooms ?? '').trim() !== ''
+  if (!hasPrice && !hasRooms) {
+    displayError.value = 'กรอกราคาแสดงหรือจำนวนห้อง'
+    return
+  }
+  saving.value = true
+  try {
+    const notes = []
+    if (hasPrice) {
+      const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/display-price`, {
+        ...displayScopePayload(),
+        input_mode: displayPrice.input_mode,
+        value: displayPrice.value,
+        action: 'set',
+      })
+      notes.push(`ราคาแสดง ${data.updated || 0} วัน`)
+    }
+    if (hasRooms) {
+      const { data } = await api.post(`/api/admin/${hotelSlug.value}/channel/display-rooms`, {
+        ...displayScopePayload(),
+        rooms: displayPrice.rooms,
+        action: 'set',
+      })
+      notes.push(`แสดงไม่เกิน ${data.rooms} ห้อง`)
+    }
+    await loadCalendar()
+    displayMessage.value = `บันทึกแล้ว · ${notes.join(' · ')}`
+  } catch (err) {
+    displayError.value = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
+  } finally {
+    saving.value = false
+  }
 }
 
 async function submitDisplayRooms(action) {
@@ -1368,7 +1413,7 @@ onUnmounted(() => {
           >Roomtype + Rateplan</button>
         </div>
         <div class="cm-sheet-body">
-          <p class="muted">{{ displaySummary }} — ราคาแสดงใช้ขีดฆ่าบนหน้าจอง ไม่เปลี่ยนราคาขายจริง จำนวนห้องที่แสดงไม่เกินห้องว่างจริง</p>
+          <p class="muted">{{ displaySummary }}</p>
 
           <div class="cm-bulk-grid">
             <div class="cm-row">
@@ -1425,28 +1470,25 @@ onUnmounted(() => {
             >{{ d.label }}</button>
           </div>
 
-          <div class="cm-row">
-            <label class="form-label">กรอกเป็น</label>
-            <div class="cm-weekdays">
+          <div class="cm-block">
+            <div class="cm-block-head">
+              <h3 class="cm-block-title">ราคาขีดฆ่า</h3>
+              <button type="button" class="cm-link-btn" :disabled="saving" @click="submitDisplayPrice('clear')">ล้าง</button>
+            </div>
+            <div class="cm-choice">
               <button
                 type="button"
-                class="cm-day-btn cm-abf-choice"
+                class="cm-choice-btn"
                 :class="{ active: displayPrice.input_mode === 'percent' }"
                 @click="displayPrice.input_mode = 'percent'"
-              >เปอร์เซ็นต์ %</button>
+              >ส่วนลด %</button>
               <button
                 type="button"
-                class="cm-day-btn cm-abf-choice"
+                class="cm-choice-btn"
                 :class="{ active: displayPrice.input_mode === 'amount' }"
                 @click="displayPrice.input_mode = 'amount'"
-              >ตัวเลขราคา</button>
+              >ราคาบาท</button>
             </div>
-          </div>
-
-          <div class="cm-row">
-            <label class="form-label">
-              {{ displayPrice.input_mode === 'percent' ? 'ส่วนลด %' : 'ราคาแสดง (บาท)' }}
-            </label>
             <input
               v-model="displayPrice.value"
               type="number"
@@ -1455,22 +1497,24 @@ onUnmounted(() => {
               class="form-input"
               :placeholder="displayPrice.input_mode === 'percent' ? 'เช่น 75' : 'เช่น 3234'"
             />
+            <div v-if="displayPreview" class="cm-price-preview">
+              <div class="cm-price-preview-top">
+                <span class="cm-price-was">฿{{ displayPreview.display.toLocaleString() }}</span>
+                <span class="cm-price-off">-{{ displayPreview.percent }}%</span>
+              </div>
+              <div class="cm-price-preview-now">
+                <span class="cm-price-currency">฿</span>
+                <span class="cm-price-sell">{{ displayPreview.sell.toLocaleString() }}</span>
+              </div>
+              <p class="muted">ตัวอย่างจากราคาขายในตาราง ไม่เปลี่ยนยอดที่แขกจ่าย</p>
+            </div>
           </div>
 
-          <div v-if="displayPreview" class="cm-price-preview">
-            <div class="cm-price-preview-top">
-              <span class="cm-price-was">฿{{ displayPreview.display.toLocaleString() }}</span>
-              <span class="cm-price-off">-{{ displayPreview.percent }}%</span>
+          <div class="cm-block">
+            <div class="cm-block-head">
+              <h3 class="cm-block-title">จำนวนห้องที่แสดง</h3>
+              <button type="button" class="cm-link-btn" :disabled="saving" @click="submitDisplayRooms('clear')">ล้าง</button>
             </div>
-            <div class="cm-price-preview-now">
-              <span class="cm-price-currency">฿</span>
-              <span class="cm-price-sell">{{ displayPreview.sell.toLocaleString() }}</span>
-            </div>
-            <p class="muted">ตัวอย่างจากราคาขายในตาราง (ไม่เปลี่ยนยอดที่แขกจ่าย)</p>
-          </div>
-
-          <div class="cm-row">
-            <label class="form-label">แสดงจำนวนห้อง</label>
             <input
               v-model="displayPrice.rooms"
               type="number"
@@ -1478,42 +1522,13 @@ onUnmounted(() => {
               max="9999"
               step="1"
               class="form-input"
-              placeholder="เช่น 3 — หน้าจองโชว์ไม่เกินจำนวนนี้"
+              placeholder="เช่น 3"
             />
-            <p class="muted">ถ้าว่างจริง 5 และตั้งแสดง 3 หน้าจองจะขึ้น 3 ถ้าว่างจริงน้อยกว่าที่ตั้ง จะขึ้นตามห้องจริง</p>
+            <p class="muted">หน้าจองไม่ขึ้นเกินจำนวนนี้ ถ้าว่างจริงน้อยกว่า จะขึ้นตามห้องจริง</p>
           </div>
 
-          <button
-            class="btn btn-primary"
-            type="button"
-            :disabled="saving"
-            @click="submitDisplayPrice('set')"
-          >
-            {{ saving ? 'กำลังบันทึก...' : 'บันทึกราคาแสดง' }}
-          </button>
-          <button
-            class="btn btn-outline"
-            type="button"
-            :disabled="saving"
-            @click="submitDisplayPrice('clear')"
-          >
-            ล้างราคาแสดง
-          </button>
-          <button
-            class="btn btn-outline"
-            type="button"
-            :disabled="saving"
-            @click="submitDisplayRooms('set')"
-          >
-            {{ saving ? 'กำลังบันทึก...' : 'บันทึกจำนวนที่แสดง' }}
-          </button>
-          <button
-            class="btn btn-outline"
-            type="button"
-            :disabled="saving"
-            @click="submitDisplayRooms('clear')"
-          >
-            ล้างจำนวนที่แสดง
+          <button class="btn btn-primary cm-submit" type="button" :disabled="saving" @click="submitDisplay">
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึก' }}
           </button>
 
           <p v-if="displayMessage" class="success-msg">{{ displayMessage }}</p>
@@ -1589,64 +1604,68 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="cm-bulk-grid">
-            <div class="cm-row">
-              <label class="form-label">ตั้งแต่</label>
-              <input v-model="stopSale.date_from" type="date" class="form-input" />
+          <div class="cm-block">
+            <div class="cm-block-head">
+              <h3 class="cm-block-title">ตามวันที่เลือก</h3>
             </div>
-            <div class="cm-row">
-              <label class="form-label">ถึง</label>
-              <input v-model="stopSale.date_to" type="date" class="form-input" :min="stopSale.date_from" />
+            <div class="cm-bulk-grid">
+              <div class="cm-row">
+                <label class="form-label">ตั้งแต่</label>
+                <input v-model="stopSale.date_from" type="date" class="form-input" />
+              </div>
+              <div class="cm-row">
+                <label class="form-label">ถึง</label>
+                <input v-model="stopSale.date_to" type="date" class="form-input" :min="stopSale.date_from" />
+              </div>
             </div>
+            <div class="cm-weekdays">
+              <button
+                v-for="d in WEEKDAYS"
+                :key="d.id"
+                type="button"
+                class="cm-day-btn"
+                :class="{ active: stopSale.weekdays.includes(d.id) }"
+                @click="toggleStopWeekday(d.id)"
+              >{{ d.label }}</button>
+            </div>
+            <div class="cm-choice">
+              <button
+                type="button"
+                class="cm-choice-btn"
+                :class="{ active: stopSale.action === 'stop' }"
+                @click="stopSale.action = 'stop'"
+              >หยุดขาย</button>
+              <button
+                type="button"
+                class="cm-choice-btn"
+                :class="{ active: stopSale.action === 'open' }"
+                @click="stopSale.action = 'open'"
+              >เปิดขาย</button>
+            </div>
+            <button class="btn btn-primary cm-submit" type="button" :disabled="saving" @click="submitStopSale(stopSale.action)">
+              {{ saving ? 'กำลังบันทึก...' : 'บันทึกช่วงนี้' }}
+            </button>
           </div>
 
-          <div class="cm-weekdays">
-            <button
-              v-for="d in WEEKDAYS"
-              :key="d.id"
-              type="button"
-              class="cm-day-btn"
-              :class="{ active: stopSale.weekdays.includes(d.id) }"
-              @click="toggleStopWeekday(d.id)"
-            >{{ d.label }}</button>
+          <div class="cm-block">
+            <div class="cm-block-head">
+              <h3 class="cm-block-title">กันห้องไม่ให้ขาย</h3>
+              <button type="button" class="cm-link-btn" :disabled="saving" @click="submitStopMin('clear')">ล้าง</button>
+            </div>
+            <div class="cm-field-row">
+              <input
+                v-model="stopSale.min_rooms"
+                type="number"
+                min="0"
+                max="9999"
+                step="1"
+                class="form-input"
+                placeholder="เช่น 2"
+              />
+              <button class="btn btn-outline" type="button" :disabled="saving" @click="submitStopMin('set')">บันทึก</button>
+            </div>
+            <p class="muted">หักจากห้องว่างจริงก่อนเทียบจำนวนที่แสดง เช่น เหลือจริง 3 กันไว้ 2 ตั้งแสดง 3 หน้าจองจะขึ้น 1</p>
           </div>
-
-          <button
-            class="btn btn-primary"
-            type="button"
-            :disabled="saving"
-            @click="submitStopSale('stop')"
-          >
-            {{ saving ? 'กำลังบันทึก...' : 'ยืนยันหยุดขาย' }}
-          </button>
-          <button
-            class="btn btn-outline"
-            type="button"
-            :disabled="saving"
-            @click="submitStopSale('open')"
-          >
-            เปิดขายอีกครั้ง
-          </button>
-
-          <div class="cm-row">
-            <label class="form-label">หยุดขายเมื่อห้องเหลือไม่เกิน</label>
-            <input
-              v-model="stopSale.min_rooms"
-              type="number"
-              min="0"
-              max="9999"
-              step="1"
-              class="form-input"
-              placeholder="เช่น 2"
-            />
-            <p class="muted">ถ้าเรทแพลนนั้นตั้งจำนวนห้องขาย จะใช้ตัวเลขนั้น ถ้าไม่ได้ตั้งจะใช้ห้องว่างจริง เหลือน้อยกว่าหรือเท่ากับค่านี้จะหยุดขายอัตโนมัติ</p>
-          </div>
-          <button class="btn btn-outline" type="button" :disabled="saving" @click="submitStopMin('set')">
-            {{ saving ? 'กำลังบันทึก...' : 'บันทึกเกณฑ์ขั้นต่ำ' }}
-          </button>
-          <button class="btn btn-outline" type="button" :disabled="saving" @click="submitStopMin('clear')">
-            ล้างเกณฑ์ขั้นต่ำ
-          </button>
 
           <p v-if="stopMessage" class="success-msg">{{ stopMessage }}</p>
           <p v-if="stopError" class="error-msg">{{ stopError }}</p>
@@ -2061,6 +2080,53 @@ onUnmounted(() => {
   z-index: 1;
 }
 .cm-sheet-body { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.cm-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-elevated) 70%, var(--color-surface));
+}
+.cm-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.cm-block-title { margin: 0; font-size: var(--text-sm); font-weight: 700; }
+.cm-link-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cm-link-btn:disabled { opacity: 0.45; cursor: default; }
+.cm-choice { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.cm-choice-btn {
+  min-height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cm-choice-btn.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+.cm-field-row { display: flex; align-items: center; gap: var(--space-2); }
+.cm-field-row .form-input { flex: 1; min-width: 0; }
+.cm-field-row .btn { flex: 0 0 auto; }
+.cm-submit { width: 100%; }
 .cm-row { display: flex; flex-direction: column; gap: var(--space-1); }
 .cm-bulk-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
 .cm-weekdays { display: flex; flex-wrap: wrap; gap: var(--space-2); }
