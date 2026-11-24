@@ -349,7 +349,7 @@ onUnmounted(() => {
               <div v-if="showImg(r) && r.image" class="img" :style="bg(r.image)"></div>
               <span v-else class="card-icon" aria-hidden="true"><i class="ti" :class="'ti-' + serviceIcon(r, i)"></i></span>
               <h3>{{ r.name }}</h3><p>{{ r.detail }}</p>
-              <a class="link" :href="book(r.link)" :target="tg" rel="noopener">จองเลย</a>
+              <a v-if="r.showBook !== false" class="link" :href="book(r.link)" :target="tg" rel="noopener">จองเลย</a>
             </article>
           </template>
         </LoopCarousel>
@@ -360,7 +360,7 @@ onUnmounted(() => {
         <div class="promo">
           <article class="pbox" v-for="(p, i) in c.promos" :key="i" :class="'g' + (i % 4)" :style="promoBoxStyle(p)">
             <h3>{{ p.title }}</h3><p>{{ p.text }}</p>
-            <a class="btn" :href="book(p.link)" :target="tg" rel="noopener">จองโปรโมชั่นนี้</a>
+            <a v-if="p.showBook !== false" class="btn" :href="book(p.link)" :target="tg" rel="noopener">จองโปรโมชั่นนี้</a>
           </article>
         </div>
       </section>

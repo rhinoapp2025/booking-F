@@ -8,6 +8,7 @@ import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import BookingPolicyNotes from '../components/BookingPolicyNotes.vue'
 import BottomNav from '../components/BottomNav.vue'
 import ChannelManagerPanel from './ChannelManagerPanel.vue'
+import AdminPmsCalendar from '../components/AdminPmsCalendar.vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
 import { apiMediaUrl } from '../utils/resolveUiImageUrl'
@@ -39,6 +40,12 @@ const BOOKING_LIST_TABS = [
   { key: 'checked_in', label: 'การจองที่เช็คอินแล้ว' },
   { key: 'cancelled', label: 'การจองที่ยกเลิกแล้ว' },
 ]
+const bookingTabs = computed(() => (
+  useKioskRooms.value
+    ? [...BOOKING_LIST_TABS, { key: 'calendar', label: 'ปฏิทินจอง' }]
+    : BOOKING_LIST_TABS
+))
+const isCalendarTab = computed(() => bookingListTab.value === 'calendar')
 
 function bangkokTodayYmd() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
@@ -374,6 +381,7 @@ function bookingListParams(listTab = bookingListTab.value) {
 }
 
 async function loadBookings({ silent = false } = {}) {
+  if (bookingListTab.value === 'calendar') return
   if (silent && bookingsPollBusy) return
   if (silent) bookingsPollBusy = true
   if (!silent) loading.value = true
@@ -399,7 +407,7 @@ function stopBookingsPoll() {
 
 function startBookingsPoll() {
   stopBookingsPoll()
-  if (tab.value !== 'bookings') return
+  if (tab.value !== 'bookings' || bookingListTab.value === 'calendar') return
   bookingsPollTimer = setInterval(() => {
     if (document.hidden) return
     loadBookings({ silent: true })
@@ -409,6 +417,7 @@ function startBookingsPoll() {
 function switchBookingListTab(key) {
   if (bookingListTab.value === key) return
   bookingListTab.value = key
+  if (key === 'calendar') return
   loadBookings()
 }
 
@@ -1406,7 +1415,7 @@ onMounted(() => {
 function switchTab(t) {
   if (t === 'kiosk' && !showKioskTab.value) t = 'rooms'
   tab.value = t
-  if (t === 'bookings') loadBookings()
+  if (t === 'bookings' && bookingListTab.value !== 'calendar') loadBookings()
   if (t === 'rooms') loadRooms()
   if (t === 'kiosk') loadKioskConfig()
   if (t === 'dashboard') {
@@ -1425,6 +1434,13 @@ watch(tab, (t) => {
 watch(showKioskTab, (on) => {
   if (!on && tab.value === 'kiosk') tab.value = 'rooms'
   loadRooms({ silent: true })
+})
+
+watch(useKioskRooms, (on) => {
+  if (!on && bookingListTab.value === 'calendar') {
+    bookingListTab.value = 'all'
+    if (tab.value === 'bookings') loadBookings()
+  }
 })
 
 onUnmounted(() => {
@@ -1603,7 +1619,7 @@ async function shareSiteLink() {
     <section v-if="tab === 'bookings'" class="admin-section">
       <div class="booking-list-tabs" role="tablist" aria-label="กรองรายการจอง">
         <button
-          v-for="item in BOOKING_LIST_TABS"
+          v-for="item in bookingTabs"
           :key="item.key"
           type="button"
           role="tab"
@@ -1613,8 +1629,9 @@ async function shareSiteLink() {
           @click="switchBookingListTab(item.key)"
         >{{ item.label }}</button>
       </div>
-      <div v-if="loading" class="state-card"><i class="ti ti-loader-2 state-card-icon spin"></i></div>
-      <div v-else-if="!bookings.length" class="state-card">
+      <AdminPmsCalendar v-if="isCalendarTab" :hotel-slug="hotelSlug" />
+      <div v-else-if="loading" class="state-card"><i class="ti ti-loader-2 state-card-icon spin"></i></div>
+      <div v-else-if="!isCalendarTab && !bookings.length" class="state-card">
         <p class="state-card-title">
           {{ bookingListTab === 'cancelled'
             ? 'ไม่มีการจองที่ยกเลิก'
@@ -1625,7 +1642,7 @@ async function shareSiteLink() {
                 : 'ไม่มีการจอง' }}
         </p>
       </div>
-      <div v-else class="booking-list">
+      <div v-else-if="!isCalendarTab" class="booking-list">
         <div v-for="b in bookings" :key="b.id" class="card booking-card">
           <div class="booking-header">
             <span :class="['booking-status', `status-${b.status}`]">{{ statusLabel(b.status, b) }}</span>
