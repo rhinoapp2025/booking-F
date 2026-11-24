@@ -460,7 +460,7 @@ async function submitSellRooms(action) {
     await loadCalendar()
     sellMessage.value = action === 'clear'
       ? `ล้างจำนวนห้องขายแล้ว (${data.cleared || 0} วัน)`
-      : `บันทึกจำนวนห้องขาย ${data.rooms} ห้องแล้ว (${data.updated || 0} วัน)`
+      : `บันทึกจำนวนห้องขายแล้ว (${data.updated || 0} วัน${data.capped ? ` · ปรับ ${data.capped} วันให้ไม่เกินห้องว่างจริง` : ''})`
   } catch (err) {
     sellError.value = err?.response?.data?.error || 'บันทึกจำนวนห้องขายไม่สำเร็จ'
   } finally {
@@ -1264,6 +1264,7 @@ onUnmounted(() => {
           <div class="cm-row">
             <label class="form-label">จำนวนห้องขาย</label>
             <input v-model="sellRooms.rooms" type="number" min="0" max="9999" step="1" class="form-input" placeholder="เช่น 5" />
+            <p class="muted">แต่ละวันจะไม่เกินห้องว่างจริงของวันนั้น ถ้าว่างน้อยกว่าที่กรอก ระบบจะบันทึกเท่าจำนวนที่ว่าง</p>
           </div>
           <button class="btn btn-primary" type="button" :disabled="saving" @click="submitSellRooms('set')">
             {{ saving ? 'กำลังบันทึก...' : 'บันทึกจำนวนห้องขาย' }}
