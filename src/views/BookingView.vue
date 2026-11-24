@@ -38,6 +38,7 @@ const { hotelSlug, hotelPath } = useHotelRoute()
 const accountMenuRef = ref(null)
 const features = useFeaturesStore()
 const hotelLogoUrl = computed(() => apiMediaUrl(hotelStore.hotel?.logo_url || ''))
+const bookingOpen = computed(() => hotelStore.hotel?.booking_open !== false)
 const hotelBannerUrl = computed(() => apiMediaUrl(hotelStore.hotel?.banner_url || hotelStore.hotel?.login_image_url || ''))
 const lightboxIndex = ref(-1)
 const lightboxRoom = ref(null)
@@ -308,6 +309,11 @@ const lastSearchKey = ref('')
 
 async function searchRooms() {
   errorMsg.value = ''
+  if (!bookingOpen.value) {
+    bookingStore.availableRooms = []
+    searchDone.value = true
+    return
+  }
   if (checkOut.value <= checkIn.value) {
     errorMsg.value = 'วันเช็คเอาต์ต้องหลังวันเช็คอิน'
     return
@@ -328,6 +334,7 @@ async function searchRooms() {
 }
 
 async function openBookingModal(roomType) {
+  if (!bookingOpen.value) return
   if (!auth.isLoggedIn) {
     const result = await Swal.fire({
       title: 'ยังไม่ได้เข้าสู่ระบบ',
@@ -676,7 +683,18 @@ onUnmounted(() => {
     <section v-if="tab === 'search'" class="booking-section">
       <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
-      <div v-if="searchDone && bookingStore.availableRooms.length" class="room-list">
+      <div v-if="!bookingOpen" class="state-card">
+        <i class="ti ti-lock state-card-icon"></i>
+        <p class="state-card-title">สาขานี้ปิดรับจอง</p>
+        <p class="state-card-sub">แขกจองโรงแรมนี้ไม่ได้จนกว่าจะเปิดรับจองอีกครั้ง</p>
+        <router-link
+          v-if="auth.canAccessHotelAdmin(hotelSlug)"
+          class="btn btn-primary"
+          :to="hotelPath('/admin')"
+        >เข้าตั้งค่า</router-link>
+      </div>
+
+      <div v-else-if="searchDone && bookingStore.availableRooms.length" class="room-list">
         <div v-for="room in bookingStore.availableRooms" :key="room.id" class="card room-card">
           <div class="room-photo">
             <img
@@ -738,7 +756,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-      <div v-if="searchDone && !bookingStore.availableRooms.length && !errorMsg" class="state-card">
+      <div v-if="bookingOpen && searchDone && !bookingStore.availableRooms.length && !errorMsg" class="state-card">
         <i class="ti ti-building-off state-card-icon"></i>
         <p class="state-card-title">ไม่มีห้องว่าง</p>
         <p class="state-card-sub">ลองเปลี่ยนวันหรือจำนวนแขก</p>

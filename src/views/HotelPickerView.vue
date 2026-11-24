@@ -271,8 +271,17 @@ async function searchHotels() {
   }
 }
 
+function adminCanConfigure(hotel) {
+  return auth.canAccessHotelAdmin(hotel?.slug)
+}
+
 async function bookHotel(hotel) {
-  if (!hotel.available) return
+  if (!hotel?.available) {
+    if (!adminCanConfigure(hotel)) return
+    hotelStore.setSlug(hotel.slug)
+    router.push(`/${hotel.slug}/admin`)
+    return
+  }
   if (!auth.isLoggedIn) {
     await promptLogin(hotelBookingsPath(hotel.slug), hotel.slug)
     return
@@ -506,15 +515,17 @@ onUnmounted(() => {
                   เริ่มต้น ฿{{ (Number(hotel.from_price) * nights).toLocaleString() }} / {{ nights }} คืน
                 </div>
               </template>
+              <p v-else-if="hotel.booking_open === false" class="muted no-room">ปิดรับจอง</p>
               <p v-else class="muted no-room">ไม่มีห้องว่างตามวันที่เลือก</p>
+              <p v-if="!hotel.available && adminCanConfigure(hotel)" class="muted no-room">แอดมินเข้าตั้งค่าได้</p>
             </div>
             <button
               type="button"
               class="btn btn-primary room-btn"
-              :disabled="!hotel.available"
+              :disabled="!hotel.available && !adminCanConfigure(hotel)"
               @click="bookHotel(hotel)"
             >
-              จอง
+              {{ hotel.available ? 'จอง' : (adminCanConfigure(hotel) ? 'เข้าตั้งค่า' : 'จอง') }}
             </button>
           </div>
         </article>

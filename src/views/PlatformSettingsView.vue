@@ -34,6 +34,8 @@ const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6})$/
 const loading = ref(true)
 const savingDefaults = ref(false)
 const savingHotel = ref(false)
+const savingBookingOpen = ref(false)
+const bookingOpen = ref(true)
 const creating = ref(false)
 const savingNetwork = ref(false)
 const uploadingKind = ref('')
@@ -129,6 +131,7 @@ async function loadPlatform() {
 function syncSelectedFlags() {
   const hotel = selectedHotel.value
   applyHotelFlags(hotel?.features || { ...defaults })
+  bookingOpen.value = hotel?.booking_open !== false
   showCatalogModal.value = false
   loadCatalogOptions()
 }
@@ -333,15 +336,41 @@ async function saveHotel() {
     const { data } = await api.patch('/api/admin/platform/features', {
       hotel_id: selectedHotelId.value,
       features: snapshotFlags(hotelFlags),
+      booking_open: bookingOpen.value,
     })
     hotels.value = data.hotels || hotels.value
     applyHotelFlags(selectedHotel.value?.features || { ...defaults })
+    bookingOpen.value = selectedHotel.value?.booking_open !== false
     await refreshGuestNav(selectedHotel.value?.slug)
     message.value = `บันทึกฟังก์ชันของ ${selectedHotel.value?.name || 'สาขา'} แล้ว`
   } catch (err) {
     errorMsg.value = err?.response?.data?.error || 'บันทึกสาขาไม่สำเร็จ'
   } finally {
     savingHotel.value = false
+  }
+}
+
+async function setBookingOpen(open) {
+  if (!selectedHotelId.value || savingBookingOpen.value) return
+  const previous = bookingOpen.value
+  bookingOpen.value = open
+  savingBookingOpen.value = true
+  message.value = ''
+  errorMsg.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/platform/features', {
+      hotel_id: selectedHotelId.value,
+      booking_open: open,
+    })
+    hotels.value = data.hotels || hotels.value
+    bookingOpen.value = selectedHotel.value?.booking_open !== false
+    const name = selectedHotel.value?.name || 'สาขา'
+    message.value = bookingOpen.value ? `เปิดให้จอง ${name} แล้ว` : `ปิดการจอง ${name} แล้ว`
+  } catch (err) {
+    bookingOpen.value = previous
+    errorMsg.value = err?.response?.data?.error || 'บันทึกการเปิดจองไม่สำเร็จ'
+  } finally {
+    savingBookingOpen.value = false
   }
 }
 
@@ -743,7 +772,7 @@ onUnmounted(() => {
               >
                 <span class="branch-item-text">
                   <strong>{{ h.name }}</strong>
-                  <span class="muted">/{{ h.slug }}{{ h.is_active ? '' : ' (ปิด)' }}</span>
+                  <span class="muted">/{{ h.slug }}{{ h.is_active ? '' : ' (ปิด)' }}{{ h.booking_open === false ? ' · ปิดจอง' : '' }}</span>
                 </span>
                 <span class="branch-item-action">
                   <span v-if="h.slug === hotelSlug" class="branch-tag">กำลังใช้อยู่</span>
@@ -813,9 +842,25 @@ onUnmounted(() => {
             <label class="form-label">สาขา</label>
             <select v-model="selectedHotelId" class="form-input" @change="syncSelectedFlags">
               <option v-for="h in hotels" :key="h.id" :value="h.id">
-                {{ h.name }} /{{ h.slug }}{{ h.is_active ? '' : ' (ปิด)' }}
+                {{ h.name }} /{{ h.slug }}{{ h.is_active ? '' : ' (ปิด)' }}{{ h.booking_open === false ? ' · ปิดจอง' : '' }}
               </option>
             </select>
+          </div>
+
+          <div class="feature-group">
+            <h3 class="group-title"><i class="ti ti-door"></i> เปิดให้จอง</h3>
+            <p class="muted">ปิดแล้วแขกจองสาขานี้จากหน้าค้นหาไม่ได้ แอดมินของสาขายังเข้าไปตั้งค่าได้</p>
+            <label class="toggle-label">
+              <input
+                type="checkbox"
+                class="toggle-input"
+                :checked="bookingOpen"
+                :disabled="!selectedHotelId || savingBookingOpen"
+                @change="setBookingOpen($event.target.checked)"
+              />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              {{ savingBookingOpen ? 'กำลังบันทึก...' : (bookingOpen ? 'เปิดรับจอง' : 'ปิดรับจอง') }}
+            </label>
           </div>
 
           <div class="feature-group catalog-block">
