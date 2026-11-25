@@ -249,10 +249,14 @@ function onCellClick(room, seg, event) {
   openDetail(room, dates.value[index])
 }
 
-// ---- ลากย้ายการจองที่ยืนยันแล้ว (แถบสีเหลือง) ไปห้อง/วันใหม่ แบบ Booking Calendar ของ PMS ----
+// ---- ลากย้าย: เหลือง = ย้ายห้อง/วัน (Sp_Transfer_Resv), ชมพู = ย้ายห้องอย่างเดียวแบบ Front Desk (Sp_TransferRoom) ----
 function canDrag(seg) {
-  return seg.cell?.kind === 'booked' && seg.cell.source !== 'folio'
+  return ['booked', 'inhouse'].includes(seg.cell?.kind) && seg.cell.source !== 'folio'
     && /^\d+$/.test(String(seg.cell.resvNo || '')) && !saving.value && !loading.value
+}
+
+function isInhouseDrag(moving) {
+  return moving?.cell?.kind === 'inhouse'
 }
 
 function endDrag() {
@@ -286,26 +290,36 @@ function dropCheck(room, start, moving) {
   const list = dates.value
   const today = data.value?.today || bangkokToday()
   const sameRoom = room.roomNo === moving.roomNo
-  if (sameRoom && start === moving.index) return { ok: false, reason: '' }
-  if (start < 0) return { ok: false, reason: 'เลยช่วงวันที่ที่แสดงอยู่ เลื่อนช่วงวันแล้วลองใหม่' }
-  if (start !== moving.index && list[start] < today) return { ok: false, reason: 'ย้ายไปวันที่ผ่านมาแล้วไม่ได้' }
-  for (let i = start; i < start + moving.span && i < list.length; i += 1) {
+  // แขกเช็คอินแล้ว (ชมพู) ย้ายได้แค่ห้อง วันเดิม — แบบ Front Desk Room Status
+  const pinned = isInhouseDrag(moving) ? moving.index : start
+  if (isInhouseDrag(moving) && sameRoom) return { ok: false, reason: '' }
+  if (sameRoom && pinned === moving.index) return { ok: false, reason: '' }
+  if (pinned < 0) return { ok: false, reason: 'เลยช่วงวันที่ที่แสดงอยู่ เลื่อนช่วงวันแล้วลองใหม่' }
+  if (!isInhouseDrag(moving) && pinned !== moving.index && list[pinned] < today) {
+    return { ok: false, reason: 'ย้ายไปวันที่ผ่านมาแล้วไม่ได้' }
+  }
+  for (let i = pinned; i < pinned + moving.span && i < list.length; i += 1) {
     const cell = cellOf(room, list[i])
     if (cell && !(sameRoom && sameStay(cell, moving.cell))) {
       return { ok: false, reason: `ห้อง ${room.roomNo} ไม่ว่างวันที่ ${formatDate(list[i])}` }
     }
   }
-  return { ok: true, reason: '' }
+  return { ok: true, reason: '', start: pinned }
 }
 
 function onDragOver(room, seg, event) {
   if (!dragData) return
   event.preventDefault()
   event.dataTransfer.dropEffect = 'move'
-  const start = indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX) - dragData.grab
+  // ชมพู: ตรึงตำแหน่งวันเดิม ไฮไลต์เฉพาะห้องปลายทาง
+  const raw = isInhouseDrag(dragData)
+    ? dragData.index
+    : indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX) - dragData.grab
+  const check = dropCheck(room, raw, dragData)
+  const start = check.start ?? raw
   const current = dropAt.value
-  if (current && current.roomNo === room.roomNo && current.start === start) return
-  dropAt.value = { roomNo: room.roomNo, start, span: dragData.span, ok: dropCheck(room, start, dragData).ok }
+  if (current && current.roomNo === room.roomNo && current.start === start && current.ok === check.ok) return
+  dropAt.value = { roomNo: room.roomNo, start, span: dragData.span, ok: check.ok }
 }
 
 function dropClass(room, seg) {
@@ -325,13 +339,16 @@ async function onDrop(room, seg, event) {
   const moving = dragData
   if (!moving) return
   event.preventDefault()
-  const start = indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX) - moving.grab
+  const raw = isInhouseDrag(moving)
+    ? moving.index
+    : indexAtPoint(seg, event.currentTarget.getBoundingClientRect(), event.clientX) - moving.grab
   endDrag()
-  const check = dropCheck(room, start, moving)
+  const check = dropCheck(room, raw, moving)
   if (!check.ok) {
     if (check.reason) Swal.fire({ icon: 'warning', title: 'ย้ายไม่ได้', text: check.reason, confirmButtonColor: '#001529' })
     return
   }
+  const start = check.start ?? raw
   await confirmMove(moving, room, start - moving.index)
 }
 
@@ -339,38 +356,94 @@ async function confirmMove(moving, room, shift) {
   if (saving.value) return
   const base = `/api/admin/${encodeURIComponent(props.hotelSlug)}/pms-calendar`
   const resvNo = moving.cell.resvNo
+  const inhouse = isInhouseDrag(moving)
   saving.value = true
   try {
     // ใช้วันเข้าพักจริงของการจอง ไม่ใช่วันแรกที่เห็นในตาราง (แถบอาจเริ่มก่อนหรือยาวเกินช่วงที่แสดง)
     const { data: info } = await api.get(`${base}/checkin`, { params: { resvNo, roomNo: moving.roomNo } })
     if (!info?.arrival || !info?.departure) throw new Error('การจองนี้ยังไม่มีวันที่เข้าพักหรือวันที่ออก')
-    const newArrival = addDays(info.arrival, shift)
-    const newDeparture = addDays(info.departure, shift)
+    // ชมพู: ย้ายห้องอย่างเดียววันเดิม / เหลือง: เลื่อนวันได้ตามที่ลาก
+    const dayShift = inhouse ? 0 : shift
+    const newArrival = addDays(info.arrival, dayShift)
+    const newDeparture = addDays(info.departure, dayShift)
     const typeNote = (room.typeName || '') !== moving.typeName
       ? `<p style="color:#8a4b00">ประเภทห้องเปลี่ยนจาก ${escapeHtml(moving.typeName || '-')} เป็น ${escapeHtml(room.typeName || '-')}</p>`
       : ''
-    const answer = await Swal.fire({
-      icon: 'question',
-      title: 'ยืนยันการย้ายการจอง?',
-      html: `<p><b>${escapeHtml(info.guest || moving.cell.guest)}</b> · เลขจอง ${escapeHtml(resvNo)}</p>`
-        + `<p>จากห้อง <b>${escapeHtml(moving.roomNo)}</b> (${formatDate(info.arrival)} → ${formatDate(info.departure)})<br>`
-        + `ไปห้อง <b>${escapeHtml(room.roomNo)}</b> (${formatDate(newArrival)} → ${formatDate(newDeparture)})</p>${typeNote}`,
-      showCancelButton: true,
-      confirmButtonText: 'ย้าย',
-      cancelButtonText: 'ยกเลิก',
-      confirmButtonColor: '#001529',
+    let remark = ''
+    if (inhouse) {
+      // บังคับเหตุผลเหมือน Front Desk Transfer Room (Reason_Config ResGroup=2)
+      let reasons = []
+      try {
+        const { data: body } = await api.get(`${base}/transfer-reasons`)
+        reasons = (body?.reasons || []).map((row) => row.name).filter(Boolean)
+      } catch { /* ใช้พิมพ์เอง */ }
+      const answer = await Swal.fire({
+        icon: 'question',
+        title: 'ยืนยันย้ายห้อง?',
+        html: `<p><b>${escapeHtml(info.guest || moving.cell.guest)}</b> · เลขจอง ${escapeHtml(resvNo)}</p>`
+          + `<p>จากห้อง <b>${escapeHtml(moving.roomNo)}</b><br>ไปห้อง <b>${escapeHtml(room.roomNo)}</b>`
+          + ` · คงวันเข้าพัก ${formatDate(info.arrival)} → ${formatDate(info.departure)}</p>${typeNote}`
+          + '<p style="color:#5c6f86;font-size:13px">ย้ายแบบ Front Desk Room Status · ต้องระบุเหตุผล</p>',
+        input: 'text',
+        inputLabel: 'เหตุผลในการย้าย *',
+        inputPlaceholder: reasons.length ? 'พิมพ์หรือเลือกจากรายการ' : 'เช่น Guest Request',
+        inputAttributes: { maxlength: 32, list: 'pms-transfer-reasons', autocomplete: 'off' },
+        inputValidator: (value) => {
+          if (!String(value || '').trim()) return 'กรุณากรอกเหตุผลในการย้ายห้อง'
+          if (String(value).trim().length > 32) return 'เหตุผลยาวเกิน 32 ตัวอักษร'
+          return null
+        },
+        showCancelButton: true,
+        confirmButtonText: 'ย้าย',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#001529',
+        didOpen: () => {
+          if (!reasons.length) return
+          const list = document.createElement('datalist')
+          list.id = 'pms-transfer-reasons'
+          reasons.forEach((name) => {
+            const option = document.createElement('option')
+            option.value = name
+            list.appendChild(option)
+          })
+          Swal.getPopup()?.appendChild(list)
+        },
+      })
+      if (!answer.isConfirmed) return
+      remark = String(answer.value || '').trim()
+    } else {
+      const answer = await Swal.fire({
+        icon: 'question',
+        title: 'ยืนยันการย้ายการจอง?',
+        html: `<p><b>${escapeHtml(info.guest || moving.cell.guest)}</b> · เลขจอง ${escapeHtml(resvNo)}</p>`
+          + `<p>จากห้อง <b>${escapeHtml(moving.roomNo)}</b> (${formatDate(info.arrival)} → ${formatDate(info.departure)})<br>`
+          + `ไปห้อง <b>${escapeHtml(room.roomNo)}</b> (${formatDate(newArrival)} → ${formatDate(newDeparture)})</p>${typeNote}`,
+        showCancelButton: true,
+        confirmButtonText: 'ย้าย',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#001529',
+      })
+      if (!answer.isConfirmed) return
+    }
+    await api.post(`${base}/move`, {
+      resvNo,
+      roomNo: moving.roomNo,
+      newRoomNo: room.roomNo,
+      newArrival,
+      userId: userId(),
+      remark,
     })
-    if (!answer.isConfirmed) return
-    await api.post(`${base}/move`, { resvNo, roomNo: moving.roomNo, newRoomNo: room.roomNo, newArrival })
     await load()
     Swal.fire({
       icon: 'success',
       title: `ย้ายไปห้อง ${room.roomNo} แล้ว`,
-      text: `${formatDate(newArrival)} → ${formatDate(newDeparture)}`,
+      text: inhouse
+        ? `${formatDate(info.arrival)} → ${formatDate(info.departure)}`
+        : `${formatDate(newArrival)} → ${formatDate(newDeparture)}`,
       confirmButtonColor: '#001529',
     })
   } catch (err) {
-    Swal.fire({ icon: 'error', title: 'ย้ายการจองไม่สำเร็จ', text: err?.response?.data?.error || err?.message || '', confirmButtonColor: '#001529' })
+    Swal.fire({ icon: 'error', title: 'ย้ายไม่สำเร็จ', text: err?.response?.data?.error || err?.message || '', confirmButtonColor: '#001529' })
   } finally {
     saving.value = false
   }
@@ -1135,7 +1208,7 @@ watch(() => props.hotelSlug, () => {
       <span><i class="inhouse"></i>เข้าพักแล้ว</span>
       <span><i class="ooo"></i>ปิดใช้งาน</span>
       <span><i class="history"></i>ประวัติ folio</span>
-      <small>กดแถบเพื่อดูรายละเอียด แก้ไข เช็คอิน หรือเช็คเอาต์ · กดช่องว่างตั้งแต่วันนี้เพื่อจองใหม่ · ลากแถบสีเหลืองเพื่อย้ายห้องหรือวัน · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
+      <small>กดแถบเพื่อดูรายละเอียด แก้ไข เช็คอิน หรือเช็คเอาต์ · กดช่องว่างตั้งแต่วันนี้เพื่อจองใหม่ · ลากเหลืองย้ายห้อง/วัน · ลากชมพูย้ายห้องแบบ Front Desk · กดช่องปิดใช้งานเพื่อปลดห้อง</small>
     </footer>
 
     <Transition name="drawer">
